@@ -26,19 +26,22 @@ jobs:
           node-version: 24
           cache: npm
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        id: python
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: npm ci
-      - run: node --test .github/tests/*.test.cjs
+      - run: node scripts/ci-check.mjs bots
       - run: python -m pip install -r backend/requirements.txt
       - run: npm run build
-      - run: npm test
+      - run: node scripts/ci-check.mjs node
         env:
           TUTORLOOP_E2E: '1'
-      - run: python -X utf8 -m unittest discover -s tests -v
-        working-directory: backend
+          TUTORLOOP_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
+      - run: node scripts/ci-check.mjs python
+        env:
+          TUTORLOOP_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
       - run: npm run check:package
       - run: npm pack --ignore-scripts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
