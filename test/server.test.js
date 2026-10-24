@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createActionRoute, createWorkspaceTrust } from '../src/server.js'
@@ -36,7 +36,9 @@ test('student HTTP API trusts host workspaces, rejects teacher actions and enfor
     assert.equal((await fetch(base)).status, 405)
     writeFileSync(join(workspace, 'lesson.txt'), '教学材料')
     assert.equal((await post({ action: 'import_file', cwd: workspace, payload: { path: 'lesson.txt' } })).status, 200)
-    assert.equal(calls.at(-1)[1].path, join(workspace, 'lesson.txt'))
+    // Windows runners may expose TEMP through an 8.3 alias (RUNNER~1).
+    // Imports intentionally resolve it to the actual path before validation.
+    assert.equal(calls.at(-1)[1].path, realpathSync(join(workspace, 'lesson.txt')))
     assert.equal((await post({ action: 'import_folder', cwd: workspace, payload: { path: '..' } })).status, 403)
     writeFileSync(join(workspace, 'private.env'), 'never read this fixture')
     assert.equal((await post({ action: 'import_file', cwd: workspace, payload: { path: 'private.env' } })).status, 400)
