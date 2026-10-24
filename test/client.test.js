@@ -46,7 +46,8 @@ test('native view mounts with session scope, student records, forms and disposes
   let opened = ''
   let savedLanguage = { language: 'zh', resolved_language: 'zh' }
   const profile = { id: 'generic', name: '英语阅读', goal: '读懂短文', daily_minutes: 30, baseline: '未诊断' }
-  const exercise = { id: 'ex1', version: 0, mode: 'coach', question: { skill: '时态', subject: '英语', question_type: 'short_answer', material: '[P1] I have lived here for years.', stem: '解释时态作用', word_limit: 80 } }
+  const exercise = { id: 'ex1', version: 0, mode: 'coach', question: { skill: '时态', subject: '英语', question_type: 'short_answer', material: '[P1] I have lived here for years.', stem: '解释时态作用', word_limit: 80 },
+    materials: [{ id: 'P1', title: '公开英语资料', locator: 'P1', url: '', text: 'I have lived here for years, and I still remember the old harbour.' }] }
   const answer = '从过去持续到现在'
   globalThis.fetch = async (_url, options) => {
     const request = JSON.parse(options.body); requests.push(request)
@@ -118,12 +119,20 @@ test('native view mounts with session scope, student records, forms and disposes
     })
     await flush(() => document.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })))
     assert.equal(requests.find(request => request.action === 'submit_answer')?.payload.answer, answer)
-    assert.match(document.body.textContent, /答案待批改/)
-    await flush(() => button('回到聊天').click())
+    assert.match(document.body.textContent, /答案已保存/)
+    // 卷面视图:材料原文可见,旧的拼接行不再重复出现。
+    assert.match(document.body.textContent, /材料原文 · 1 段/)
+    assert.match(document.body.textContent, /I have lived here for years, and I still remember the old harbour\./)
+    assert.doesNotMatch(document.querySelector('section[aria-label="当前练习"]').textContent, /\[P1\]/)
+    let copiedText = ''
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async text => { copiedText = text } } })
+    await flush(() => button('请导师批改（已复制请求）').click())
     assert.equal(opened, 'chat')
+    assert.equal(copiedText, '请读取 TutorLoop 当前练习，按材料批改我刚提交的答案。')
+    assert.match(document.body.textContent, /批改请求已复制/)
     const language = document.querySelector('select[aria-label="Language / 语言"]')
     await flush(() => { language.value = 'en'; language.dispatchEvent(new window.Event('change', { bubbles: true })) })
-    assert.match(document.body.textContent, /Return to chat/)
+    assert.match(document.body.textContent, /Ask tutor to review/)
     assert.match(document.body.textContent, /Your attempts/)
     assert.match(document.body.textContent, /awaiting feedback/)
     assert.match(document.body.textContent, /从过去持续到现在/)

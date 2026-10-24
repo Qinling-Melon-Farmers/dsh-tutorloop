@@ -169,6 +169,12 @@ class BridgeActionsTest(unittest.TestCase):
         for field in ('reference_answer', 'correct_option_id', 'rubric', 'hint', 'explanation'):
             self.assertNotIn(field, state['exercise']['question'])
         self.assertNotIn('sources', state['exercise'])
+        # 卷面视图：学生可见材料原文与出处，但看不到教师参考。
+        materials = state['exercise']['materials']
+        self.assertTrue(materials)
+        self.assertEqual(materials[0]['text'], seed['sources'][0]['text'])
+        for material in materials:
+            self.assertNotIn('reference_answer', material)
         result = self.action('submit_answer', exercise_id=ex['id'], answer=seed['question']['correct_option_id'], submission_id='one', expected_version=ex['version'])
         self.assertEqual(result['status'], 'graded')
         self.assertTrue(self.action('student_state', exercise_id=ex['id'])['attempts'][0]['feedback'])

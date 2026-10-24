@@ -15,8 +15,20 @@ function Feedback({ feedback, language }) {
   if (!feedback) return null
   return localize(<div className="tutorloop-card"><h3>本次反馈</h3><p>教学参考分：{feedback.score} / {feedback.max_score} · 非官方评分</p>
     <p>{feedback.next_skill}：{feedback.next_exercise_instruction}</p>
-    {(feedback.criteria || []).map(item => <p key={item.name}><strong>{item.name} {item.awarded}/{item.max_points}</strong> {item.feedback}{item.student_span && <><br /><small>你的原句：{item.student_span}</small></>}</p>)}
+    {Boolean(feedback.criteria?.length) && <table className="tutorloop-table"><caption className="tutorloop-sr-only">分项得分</caption><thead><tr><th scope="col">维度</th><th scope="col">得分</th><th scope="col">反馈</th></tr></thead><tbody>{feedback.criteria.map(item => <tr key={item.name}><th scope="row">{item.name}</th><td>{item.awarded}/{item.max_points}</td><td>{item.feedback}{item.student_span && <><br /><small>你的原句：{item.student_span}</small></>}</td></tr>)}</tbody></table>}
+    {Boolean(feedback.omissions?.length) && <div className="tutorloop-warning"><strong>遗漏要点</strong><ul>{feedback.omissions.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+    {Boolean(feedback.unsupported_claims?.length) && <div className="tutorloop-warning"><strong>材料外推断</strong><ul>{feedback.unsupported_claims.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
     <p>{feedback.organization_feedback}</p><details><summary>改写示范</summary><p>{feedback.improved_answer}</p></details></div>, language)
+}
+
+/** 卷面视图:材料原文折叠区。长材料默认收起,保持题干可见;材料文本永不翻译。 */
+function MaterialPassages({ materials, language }) {
+  const list = materials || []
+  if (!list.length) return null
+  const totalChars = list.reduce((sum, m) => sum + (m.text?.length || 0), 0)
+  return localize(<details className="tutorloop-card" open={totalChars <= 400}><summary>材料原文 · {list.length} 段 · 约 {totalChars} 字</summary>
+    {list.map((m, index) => <article key={m.id || index}><h4 data-tutorloop-content>{m.title || m.locator || `材料 ${index + 1}`}</h4><p className="tutorloop-material" data-tutorloop-content>{m.text}</p>{m.url && /^https?:\/\//i.test(m.url) && <a href={m.url} target="_blank" rel="noreferrer">查看原始来源</a>}</article>)}
+    <p><small>材料原文仅作题面依据;答案与评分点不会在此展示。</small></p></details>, language)
 }
 
 export function TutorLoopPanel({ cwd, openChat }) {
@@ -108,6 +120,27 @@ export function TutorLoopPanel({ cwd, openChat }) {
   const profile = overview?.learning_profile || student?.learning_profile
   useEffect(() => { setAnswer(''); setRevealText(''); submission.current = null }, [exercise?.id])
 
+  // 批改自动回流:待批改期间轻量轮询,聊天模型批改完自动更新面板;面板重新可见时也刷新。
+  const pendingRef = useRef(false)
+  useEffect(() => { pendingRef.current = pending }, [pending])
+  useEffect(() => {
+    if (!cwd || !pending) return
+    const timer = setInterval(() => {
+      if (!active.current || document.hidden) return
+      studentAction(cwd, 'overview', {}).then(state => {
+        if (!active.current || state.pending) return
+        setNotice('批改已完成，反馈已更新。')
+        run(signal => refresh(signal))
+      }).catch(() => { /* transient poll failures retry on the next tick */ })
+    }, 15000)
+    return () => clearInterval(timer)
+  }, [cwd, pending])
+  useEffect(() => {
+    const onVisible = () => { if (!document.hidden && active.current && cwd && pendingRef.current) run(signal => refresh(signal)) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [cwd])
+
   async function startPractice(id) {
     await run(async signal => {
       await studentAction(cwd, 'start_practice', { seed_id: id, mode }, signal)
@@ -125,8 +158,17 @@ export function TutorLoopPanel({ cwd, openChat }) {
       if (submission.current?.signature !== signature) submission.current = { signature, id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}` }
       const result = await studentAction(cwd, 'submit_answer', { exercise_id: exercise.id, answer, submission_id: submission.current.id, expected_version: exercise.version }, signal)
       await refresh(signal)
-      if (active.current) setNotice(result.status === 'pending' ? '答案已保存。请回到聊天，让 DSH 的当前模型按本题材料批改。' : '作答已记录，下面可查看反馈。')
+      if (active.current) setNotice(result.status === 'pending' ? '答案已保存。点击“请导师批改”，请求已自动复制，回聊天粘贴发送即可。' : '作答已记录，下面可查看反馈。')
     })
+  }
+
+  const GRADE_REQUEST = '请读取 TutorLoop 当前练习，按材料批改我刚提交的答案。'
+
+  async function requestGrading() {
+    let copied = false
+    try { await navigator.clipboard?.writeText(GRADE_REQUEST); copied = true } catch { /* clipboard may be unavailable without focus */ }
+    setNotice(copied ? '批改请求已复制。已切回聊天，粘贴并发送即可。' : `复制失败，请手动复制：“${GRADE_REQUEST}”`)
+    openChat?.()
   }
 
   async function reveal(kind) {
@@ -174,10 +216,13 @@ export function TutorLoopPanel({ cwd, openChat }) {
       {busy && <p role="status" className="tutorloop-muted">正在处理…</p>}
       {tab === '练习' && <>
         <section className="tutorloop-card"><h2>开始一个小任务</h2>{choices.length ? <><label>练习<select value={seed} onChange={e => setSeed(e.target.value)}><option value="">请选择一题</option>{choices.map(item => <option key={item.id} value={item.id}>{item.subject} · {item.skill}</option>)}</select></label><label>方式<select value={mode} onChange={e => setMode(e.target.value)}><option value="coach">陪练：可提示与示范</option><option value="exam">自测：交卷后讲解</option></select></label><button className="tutorloop-primary" disabled={busy || !seed || pending} onClick={() => startPractice(seed)}>开始练习</button></> : <p>还没有练习。可以回到聊天，让 DSH 根据你的学习目标与已有资料创建一题。</p>}<p className="tutorloop-muted">内置练习以国考为主；其他主题可在聊天中请当前模型创建。自编与 AI 练习均需核对。</p></section>
-        {question && <section className="tutorloop-card" aria-label="当前练习"><div className="tutorloop-row"><h2>{question.skill || question.subject || '当前练习'}</h2><span className="tutorloop-badge">{exercise.mode === 'exam' ? '自测' : '陪练'}</span></div><div className="tutorloop-material">{question.material}</div><p><strong>{question.stem}</strong></p>{question.question_type !== 'single_choice' && <small>不超过 {question.word_limit} 字</small>}
+        {question && <section className="tutorloop-card" aria-label="当前练习"><div className="tutorloop-row"><h2>{question.skill || question.subject || '当前练习'}</h2><span className="tutorloop-badge">{exercise.mode === 'exam' ? '自测' : '陪练'}</span></div>
+          <MaterialPassages materials={exercise.materials} language={language} />
+          {!exercise.materials?.length && <div className="tutorloop-material">{question.material}</div>}
+          <p><strong>{question.stem}</strong></p>{question.question_type !== 'single_choice' && <small>不超过 {question.word_limit} 字</small>}
           <form onSubmit={submit}>{question.question_type === 'single_choice' ? <fieldset disabled={busy || pending}><legend>请选择一个选项</legend>{(question.options || []).map(option => <label className="tutorloop-option" key={option.id}><input type="radio" name={`answer-${exercise.id}`} value={option.id} checked={answer === option.id} onChange={e => setAnswer(e.target.value)} />{option.id} · {option.text}</label>)}</fieldset> : <label>你的答案<textarea value={answer} disabled={busy || pending} onChange={e => setAnswer(e.target.value)} placeholder="用自己的话写出思路…" /></label>}<div className="tutorloop-row"><button type="submit" className="tutorloop-primary" disabled={busy || pending || !answer.trim()}>保存并提交</button>{exercise.mode !== 'exam' && <><button type="button" disabled={busy || pending} onClick={() => reveal('hint')}>给一个提示</button><button type="button" disabled={busy || pending} onClick={() => reveal('answer')}>看示范</button></>}</div></form>
           {revealText && <div className="tutorloop-notice">{revealText}<p><small>本次已登记使用辅助；下一题再验证独立完成。</small></p></div>}
-          {pending && <div className="tutorloop-notice"><p>这份主观答案待批改。请回到聊天说：“请读取 TutorLoop 当前练习，按材料批改我刚提交的答案。”</p><button onClick={openChat}>回到聊天</button><p><small>面板不会另开模型调用，也不会把待批改记为零分。聊天批改完成后刷新记录。</small></p></div>}
+          {pending && <div className="tutorloop-notice"><p>这份主观答案待批改。点击下方按钮后，在聊天里粘贴发送即可批改。</p><div className="tutorloop-row"><button className="tutorloop-primary" onClick={requestGrading}>请导师批改（已复制请求）</button><button onClick={() => run(signal => refresh(signal))}>我已发送，刷新批改</button></div><p><small>面板不会另开模型调用，也不会把待批改记为零分。批改完成后这里会自动更新。</small></p></div>}
         </section>}
         {attempts.length > 0 && <section><h2>作答记录</h2>{attempts.map((attempt, index) => <article className="tutorloop-card" key={attempt.id}><h3>第 {index + 1} 次作答 · {attempt.status === 'graded' ? '已反馈' : '待批改'}</h3><p className="tutorloop-material">{attempt.answer}</p>{Boolean(attempt.assisted) && <small>使用过提示、示范或修改</small>}<Feedback feedback={attempt.feedback} language={language} /></article>)}</section>}
         <section className="tutorloop-card"><h2>到期复习</h2>{overview?.due?.length ? overview.due.map(review => <div className="tutorloop-row" key={review.seed_id}><span>{review.skill}</span><button disabled={busy || pending} onClick={() => startPractice(review.seed_id)}>复习这题</button></div>) : <p className="tutorloop-muted">暂无到期任务。做完并复盘后，这里会出现复习安排。</p>}</section>

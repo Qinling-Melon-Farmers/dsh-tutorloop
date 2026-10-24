@@ -18,7 +18,16 @@ const english = {
   '请选择一个选项': 'Choose one option', '你的答案': 'Your answer', '用自己的话写出思路…': 'Explain your reasoning in your own words…',
   '保存并提交': 'Save and submit', '给一个提示': 'Get a hint', '看示范': 'Show an example',
   '本次已登记使用辅助；下一题再验证独立完成。': 'Assistance is recorded for this attempt. Check independent performance on another question.',
-  '这份主观答案待批改。请回到聊天说：“请读取 TutorLoop 当前练习，按材料批改我刚提交的答案。”': 'This written answer is awaiting feedback. Return to chat and ask: “Read my current TutorLoop practice and review the answer I just submitted against its materials.”',
+  '这份主观答案待批改。点击下方按钮后，在聊天里粘贴发送即可批改。': 'This written answer is awaiting feedback. Use the button below, then paste and send the copied request in chat.',
+  '请导师批改（已复制请求）': 'Ask tutor to review (request copied)', '我已发送，刷新批改': 'Sent. Refresh feedback',
+  '面板不会另开模型调用，也不会把待批改记为零分。批改完成后这里会自动更新。': 'The panel makes no separate model call and never scores a pending answer as zero. This view updates itself once the review lands.',
+  '批改请求已复制。已切回聊天，粘贴并发送即可。': 'Review request copied. Chat is now open — paste and send it.',
+  '批改已完成，反馈已更新。': 'Review finished. Feedback updated.',
+  '答案已保存。点击“请导师批改”，请求已自动复制，回聊天粘贴发送即可。': 'Answer saved. Use “Ask tutor to review”; the request is copied — paste and send it in chat.',
+  '材料原文 · ': 'Materials · ', ' 段 · 约 ': ' passages · about ',
+  '材料原文仅作题面依据；答案与评分点不会在此展示。': 'Passages are shown for reading only. Answers and grading points are never displayed here.',
+  '维度': 'Dimension', '得分': 'Score', '反馈': 'Feedback', '分项得分': 'Criteria scores',
+  '遗漏要点': 'Missed points', '材料外推断': 'Claims beyond the material',
   '回到聊天': 'Return to chat', '面板不会另开模型调用，也不会把待批改记为零分。聊天批改完成后刷新记录。': 'The panel does not make a separate model call or score a pending answer as zero. Refresh after your chat model finishes the review.',
   '答案已保存。请回到聊天，让 DSH 的当前模型按本题材料批改。': 'Answer saved. Return to chat for feedback from your current DSH model using this question’s materials.',
   '作答已记录，下面可查看反馈。': 'Answer recorded. Review your feedback below.',
@@ -58,7 +67,9 @@ export function translate(text, language) {
   if (language !== 'en' || typeof text !== 'string') return text
   if (Object.hasOwn(english, text)) return english[text]
   const collected = /^资料处理完成，新增 (\d+) 个片段。请核对来源和完整性。$/.exec(text)
-  return collected ? `Materials processed: ${collected[1]} new excerpts. Check sources and completeness.` : text
+  if (collected) return `Materials processed: ${collected[1]} new excerpts. Check sources and completeness.`
+  const copyFailed = /^复制失败，请手动复制：“(.+)”$/.exec(text)
+  return copyFailed ? `Copy failed. Copy this manually: “${copyFailed[1]}”` : text
 }
 
 /** Translate only our known UI literals, never arbitrary material or backend text. */

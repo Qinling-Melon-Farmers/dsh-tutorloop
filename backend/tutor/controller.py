@@ -125,7 +125,12 @@ def public_exercise(exercise):
     q = result['question']
     for key in ('reference_answer', 'correct_option_id', 'explanation', 'rubric', 'hint'):
         q.pop(key, None)
-    result.pop('sources', None)
+    # Students see the material passages (卷面) but not teacher references.
+    # sources carry material text and provenance only; answers live in the
+    # question fields removed above, so mapping them here leaks nothing.
+    result['materials'] = [{'id': s.get('id'), 'title': s.get('title'),
+                             'locator': s.get('locator'), 'url': s.get('url'),
+                             'text': s.get('text')} for s in result.pop('sources', [])]
     return result
 
 

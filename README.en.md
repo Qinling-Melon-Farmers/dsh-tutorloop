@@ -16,7 +16,10 @@ The learning loop is: establish a goal → inspect source material → freeze a 
 - 17 tools for the DSH teacher, including web search, local document import, task creation and grading persistence.
 - PDF, DOCX, TXT, Markdown and HTML imports; provenance and page references; local BM25 retrieval.
 - Public web search and URL import, with extracted text distinguished from search snippets.
+- Practice pages show the original material passages with provenance; long passages collapse by default.
 - Objective grading and validated rubric-based feedback; unanswered or pending subjective work is not scored as zero.
+- One-click grading handoff: submitting a written answer copies the review request and switches to chat; the panel refreshes itself once the review lands.
+- Feedback is rendered as a per-criterion score table with your original wording, missed points, and claims beyond the material.
 - SQLite records separated by session workspace; frozen rubrics, idempotent submissions and optimistic version checks.
 - Optional Memoir summary candidates; no automatic writes to long-term memory.
 
