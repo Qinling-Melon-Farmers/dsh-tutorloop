@@ -4,6 +4,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to validate for a release
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -20,16 +26,18 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
-          cache: npm
+          cache: ${{ !inputs.ref && 'npm' || '' }}
+          package-manager-cache: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         id: python
         with:
           python-version: '3.12'
-          cache: pip
+          cache: ${{ !inputs.ref && 'pip' || '' }}
           cache-dependency-path: backend/requirements.txt
       - run: npm ci
       - run: node scripts/ci-check.mjs bots

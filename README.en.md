@@ -105,6 +105,6 @@ npm run test:python
 npm run check:package
 ```
 
-`TUTORLOOP_TEST_PYTHON` selects a prepared interpreter for integration tests and `test:python`. Tests create temporary databases. CI runs the real integration test on Windows and Linux. [Publishing and bots](docs/AUTOMATION.md) explains the manual npm workflow; pushing source does not publish a package.
+`TUTORLOOP_TEST_PYTHON` selects a prepared interpreter for integration tests and `test:python`. Tests create temporary databases. A `v*` tag triggers Windows/Linux validation, npm publication and a GitHub Release. npm Trusted Publisher setup is required for automatic publication; ordinary source pushes run CI. See [Publishing and bots](docs/AUTOMATION.md).
 
 Apache-2.0. See [LICENSE](LICENSE). DSH plugin packaging and native view integration were informed by [dsh-memoir](https://github.com/Qinling-Melon-Farmers/dsh-memoir); StudyHub interoperability was researched against [dsh-web-studyhub](https://github.com/EricWang1358/dsh-web-studyhub).

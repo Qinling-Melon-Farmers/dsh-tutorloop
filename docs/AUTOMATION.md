@@ -4,7 +4,7 @@ TutorLoop uses GitHub Actions and Dependabot. Routine automation needs only GitH
 
 ## Continuous integration
 
-`CI` runs on pull requests, pushes to `main`, and manual dispatch. Its Linux and Windows jobs use Node 24 and Python 3.12, install the locked npm dependencies and backend requirements, build the native client, run Node and Python tests, and verify the npm package allowlist. `TUTORLOOP_E2E=1` enables the real bundled-Python workflow tests using temporary databases. The tests do not require an LLM account or a running DSH installation.
+`CI` runs on pull requests, pushes to `main`, manual dispatch, and as a reusable workflow for releases. Its Linux and Windows jobs use Node 24 and Python 3.12, install the locked npm dependencies and backend requirements, build the native client, run Node and Python tests, and verify the npm package allowlist. `TUTORLOOP_E2E=1` enables the real bundled-Python workflow tests using temporary databases. Release validation checks out the requested tag and disables dependency caches. The tests do not require an LLM account or a running DSH installation.
 
 The package check rejects unexpected files and verifies required runtime assets. Both operating systems upload the tested npm tarball with a seven-day artifact retention period. A CI artifact is a reviewable build, not a publication. New commits cancel superseded CI runs; publishing is serialized and never canceled midway.
 
@@ -29,25 +29,42 @@ These choices adapt Memoir's advisory issue guidance and human-reviewed related-
 
 `.github/dependabot.yml` checks npm development dependencies, Python backend requirements, and GitHub Actions weekly. Updates are grouped by ecosystem and remain ordinary PRs; nothing auto-merges. Maintainers should review changes, especially parser/network dependencies and action permission changes, and wait for CI.
 
-## Manual npm release
+## Tag → npm → GitHub Release
 
-`Publish to npm` runs only through `workflow_dispatch` on `main`. Pushing a commit or tag does not publish anything. It requires the requested version to match `package.json`, repeats the build/tests/package check, and targets the GitHub environment named `npm` (configure its protection rules separately). Release builds disable setup-node package caching. Only this workflow grants `id-token: write`, for npm OIDC; it does not use a stored npm publish token.
+`Release` (`.github/workflows/publish.yml`) runs when a `v*` tag is pushed. Manual dispatch accepts an existing `tag` for recovery. It invokes the same Windows/Linux CI first, then checks that the tag is exactly `v` + the version in both package manifests, points to the checked-out commit, and belongs to `main` history. Ordinary commits do not publish packages.
 
-The workflow checks that the bundled npm CLI supports trusted publishing (npm 11.5.1 or later). Node 24 is used in the runner. See the official [npm trusted publishing requirements and configuration](https://docs.npmjs.com/trusted-publishers/) and [setup-node release-cache guidance](https://github.com/actions/setup-node/blob/main/docs/advanced-usage.md).
+The publish job uses the GitHub environment **npm** and grants `id-token: write` for npm OIDC, `actions: read` to download this run's tested Linux artifact, and `contents: write` to create a GitHub Release. It publishes that tested tarball with provenance, waits for public registry visibility, downloads and verifies npm's SHA512 tarball, then attaches those exact bytes to the GitHub Release. Stable versions use the npm `latest` tag; prereleases use `next` and GitHub's prerelease flag. Only this workflow has publication permissions.
 
-### First publication bootstrap
+If an npm version already exists, the workflow validates its package identity and repository, skips publication, and uses the registry tarball for the Release. This supports retries and the locally bootstrapped **0.1.0** without trying to overwrite an immutable npm version. Registry errors other than 404 fail explicitly. An existing GitHub Release is left unchanged. These rules do not claim that a local bootstrap has CI provenance.
 
-For a package that has never been published, a maintainer must first establish the package under their npm account using an explicitly authorized local publication. Trusted-publisher configuration is available in that package's npm settings, so an unregistered name alone does not make the committed workflow ready to publish. Check the current npm UI before release; publishing is a separate decision from pushing repository source.
+### One-time npm configuration
 
-Suggested maintainer sequence (instructions only; repository setup does not execute these commands):
+Version **0.1.0** was published locally with maintainer login/2FA on 2026-10-25; public registry integrity and the downloaded CLI were verified. Future CI publishing requires a trusted-publisher connection in that package's npm settings:
 
-1. Verify ownership/name availability and the exact `repository.url`, inspect the tested tarball, and complete the first local publication with npm login/2FA when ready. For example, publish the reviewed `dsh-tutorloop-<version>.tgz` using `npm publish <tarball> --access public`. Follow npm's [first public package publication guide](https://docs.npmjs.com/creating-and-publishing-unscoped-public-packages/).
-2. Create a GitHub environment named **npm**, allow deployment from **main** only, and add a required reviewer where the repository plan supports it. Prefer preventing self-review for release approvals.
-3. In the npm package's Settings → Trusted publishing, configure GitHub Actions with owner **Qinling-Melon-Farmers**, repository **dsh-tutorloop**, workflow filename **publish.yml**, and environment **npm**. These fields must match exactly. No `NPM_TOKEN` or `NODE_AUTH_TOKEN` repository secret is needed for this public package.
-4. Bump to a new, unpublished version, merge reviewed changes to `main`, and manually run **Publish to npm** with that exact version. Do not retry a published version as a new release.
-5. Review the npm result and provenance, then review npm's option to restrict traditional token publication after OIDC works. Follow the current npm guidance for any publisher-validation deadline.
+| npm field | Value |
+| --- | --- |
+| Provider | GitHub Actions |
+| Organization or user | `Qinling-Melon-Farmers` |
+| Repository | `dsh-tutorloop` |
+| Workflow filename | `publish.yml` |
+| Environment name | `npm` |
+| Allowed actions | Enable direct `npm publish` |
 
-This repository has not published a package merely by adding the workflow. GitHub environment and npm account configuration must be completed by a maintainer with those permissions.
+The filename and environment must match exactly. No npm token is stored in GitHub. Configure GitHub environment protection separately; if deployment ref restrictions are enabled, allow **tags matching `v*`** (and `main` for manual recovery). Allowing only the `main` branch blocks tag-triggered publication.
+
+Current npm settings default new connections to staged publication. This workflow uses direct publication, so select the corresponding allowed action. npm also requires a new trusted publisher's first successful publication within two days; configure it when the next unpublished version is ready. Skipping an already published 0.1.0 does not validate OIDC. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) for the current settings and [setup-node release-cache guidance](https://github.com/actions/setup-node/blob/main/docs/advanced-usage.md).
+
+### Publishing subsequent versions
+
+After reviewing changes and updating the version, push the commit and its matching tag:
+
+```sh
+npm version patch
+git push origin main
+git push origin --follow-tags
+```
+
+`npm version` updates both manifests and creates the version commit/tag. Do not move published tags. Monitor the **Release** workflow; success means public npm visibility and GitHub Release creation both completed. If a run fails after npm accepts publication, rerun it or manually dispatch with the same existing tag; the registry check prevents a duplicate publish.
 
 ## Recommended GitHub settings
 
@@ -65,6 +82,6 @@ npm run test:python
 npm run check:package
 ```
 
-Set `TUTORLOOP_E2E=1` when Python dependencies are installed to run bundled-backend Node tests as CI does. The automation tests exercise form classification, safe treatment of hostile prose, advisory duplicate suggestions, and idempotent bot-comment updates using mocked GitHub APIs. They never contact GitHub or publish npm packages.
+Set `TUTORLOOP_E2E=1` when Python dependencies are installed to run bundled-backend Node tests as CI does. Automation tests cover advisory issue guidance plus release tag/manifest checks, registry error handling, bounded visibility polling and tarball integrity using mocked network/git operations. They never contact GitHub or publish npm packages.
 
-中文说明：CI、每周依赖更新和 Issue 引导已随代码配置；机器人只提示，不自动关闭 Issue/PR。npm 发布只能手动触发，还需要维护者配置 GitHub 的 npm 环境及 npm Trusted Publisher。首次建包需要单独确认并完成本地发布；本次提交和推送不会发布 npm 包。
+中文说明：推送版本 tag → Windows/Linux 检查 → npm 发布 → GitHub Release。已有版本会跳过重复发布，Release 附件使用 npm 原包并校验完整性。0.1.0 已通过本地登录发布；后续自动发布须在 npm 配置上表所列的 Trusted Publisher，并允许直接 `npm publish`。本地登录不会自动授予 GitHub Actions 发布权。Issue 机器人只提示，不自动关闭 Issue/PR。

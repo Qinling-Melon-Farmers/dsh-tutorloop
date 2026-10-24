@@ -1,53 +1,92 @@
-name: Publish to npm
+name: Release
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Exact package version to publish (for example 0.1.0)'
+      tag:
+        description: 'Existing version tag to release or retry (for example v0.1.0)'
         required: true
         type: string
 permissions:
   contents: read
-  id-token: write
 concurrency:
-  group: npm-publish
+  group: tutorloop-release
   cancel-in-progress: false
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ inputs.tag || github.ref }}
   publish:
-    if: github.ref == 'refs/heads/main'
+    needs: validate
     environment: npm
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        id: python
-        with:
-          python-version: '3.12'
-      - name: Check requested version
+      - name: Verify tag, version and main ancestry
+        id: release
+        run: node scripts/release.mjs check
+      - name: Check whether this npm version already exists
+        id: registry
+        run: node scripts/release.mjs probe
+      - name: Download the Linux tarball tested by this release run
+        if: steps.registry.outputs.exists != 'true'
         env:
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: node -e "if (process.env.RELEASE_VERSION !== require('./package.json').version) throw new Error('Version mismatch')"
-      - run: npm ci
-      - run: node scripts/ci-check.mjs bots
-      - run: python -m pip install -r backend/requirements.txt
-      - run: npm run build
-      - run: node scripts/ci-check.mjs node
-        env:
-          TUTORLOOP_E2E: '1'
-          TUTORLOOP_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
-      - run: node scripts/ci-check.mjs python
-        env:
-          TUTORLOOP_TEST_PYTHON: ${{ steps.python.outputs.python-path }}
-      - run: npm run check:package
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name tutorloop-ubuntu-latest --dir release-artifact
       - name: Require npm trusted publishing support
-        run: node -e "const [major,minor,patch]=require('child_process').execFileSync('npm',['--version'],{encoding:'utf8'}).trim().split('.').map(Number);if(major<11||(major===11&&(minor<5||(minor===5&&patch<1))))throw new Error('Trusted publishing requires npm >=11.5.1; update the runner Node release')"
+        if: steps.registry.outputs.exists != 'true'
+        run: node -e "const [major,minor,patch]=require('child_process').execFileSync('npm',['--version'],{encoding:'utf8'}).trim().split('.').map(Number);if(major<11||(major===11&&(minor<5||(minor===5&&patch<1))))throw new Error('Trusted publishing requires npm >=11.5.1')"
       - name: Publish with npm trusted publishing
-        run: npm publish --access public --provenance
+        if: steps.registry.outputs.exists != 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          NPM_DIST_TAG: ${{ steps.release.outputs.dist_tag }}
+        run: npm publish "release-artifact/dsh-tutorloop-$RELEASE_VERSION.tgz" --access public --provenance --tag "$NPM_DIST_TAG"
+      - name: Verify public npm availability and download the exact release asset
+        id: asset
+        run: node scripts/release.mjs asset
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          RELEASE_ASSET: ${{ steps.asset.outputs.asset }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists; leaving it unchanged."
+            exit 0
+          fi
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const version = process.env.RELEASE_VERSION;
+          const notes = `TutorLoop 学习陪练 / guided learning for DeepSeek Harness.\n\n[npm ${version}](https://www.npmjs.com/package/dsh-tutorloop/v/${version}) · [使用说明 / Guide](https://github.com/${process.env.GITHUB_REPOSITORY}/tree/${process.env.RELEASE_TAG}#readme)\n\n\`\`\`sh\ndsh plugin --profile web add dsh-tutorloop@${version}\nnpx --yes --package=dsh-tutorloop@${version} dsh-tutorloop setup\n\`\`\`\n\n需要 / Requires: DSH 0.2.1-rc.2, Node 22.19+ or 24+, Python 3.11+.\n\n附件直接下载自 npm，已核对 SHA512；与 npm 安装内容一致。\nThe attached tarball is downloaded from npm and verified against its SHA512 integrity.\n`;
+          writeFileSync(join(process.env.RUNNER_TEMP, 'tutorloop-release-notes.md'), notes);
+          NODE
+          flags=(--latest)
+          if [[ "$PRERELEASE" == 'true' ]]; then
+            flags=(--prerelease --latest=false)
+          fi
+          gh release create "$RELEASE_TAG" "$RELEASE_ASSET" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "TutorLoop $RELEASE_TAG" --generate-notes \
+            --notes-file "$RUNNER_TEMP/tutorloop-release-notes.md" "${flags[@]}"

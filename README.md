@@ -69,6 +69,6 @@ npm run test:python
 npm run check:package
 ```
 
-源代码推送只触发 CI；npm 发布使用独立手动工作流。现有 DSH 配置不会被开发脚本修改。真实模型的教学效果仍需使用你的服务商模型实际验收。
+推送 `v*` 版本 tag 会触发 Windows/Linux 检查，通过后发布 npm 并创建 GitHub Release；首次使用自动发布需配置 npm Trusted Publisher。普通源码推送只触发 CI，详见[发布说明](docs/AUTOMATION.md)。真实模型的教学效果仍需使用你的服务商模型实际验收。
 
 插件打包、原生页面与项目自动化参考 [dsh-memoir](https://github.com/Qinling-Melon-Farmers/dsh-memoir)。本项目采用 [Apache-2.0](LICENSE) 许可证。
