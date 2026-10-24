@@ -22,7 +22,7 @@
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": { "inject": ["@deepseek-ai/dsh-api-session-controller", "@deepseek-ai/dsh-client-ui-renderer", "@deepseek-ai/dsh-client-ui-session", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-settings-general"], "platform": "web" }
   },
-  "devDependencies": { "esbuild": "0.28.2", "react": "18.3.1", "react-dom": "18.3.1", "jsdom": "26.1.0", "playwright": "1.58.2" },
+  "devDependencies": { "esbuild": "0.28.2", "react": "19.3.1", "react-dom": "19.3.1", "jsdom": "30.1.3", "playwright": "1.64.1" },
   "license": "Apache-2.0",
   "keywords": ["deepseek", "dsh", "dsh-plugin", "tutor", "learning", "spaced-repetition", "local-first"],
   "repository": { "type": "git", "url": "git+https://github.com/Qinling-Melon-Farmers/dsh-tutorloop.git" },
