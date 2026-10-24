@@ -20,11 +20,12 @@ CI repeats build, Node/real-backend tests, Python tests and package inspection o
 
 ## npm publication
 
-Version 0.1.0 was published with maintainer login/2FA on 2026-10-25. The public registry SHA512 matches the reviewed local tarball, and `npx --yes --package=dsh-tutorloop@0.1.0 dsh-tutorloop help` passed from outside the source checkout. The release helper also downloaded and verified the public tarball. This initial local publication does not have GitHub Actions provenance.
+Version 0.1.0 was published with maintainer login/2FA on 2026-10-25. The public registry SHA512 matches the reviewed local tarball, and `npx --yes --package=dsh-tutorloop@0.1.0 dsh-tutorloop help` passed from outside the source checkout. Its tag-triggered workflow passed on Windows/Linux and created a GitHub Release; the downloaded GitHub asset also matches npm's SHA512. This initial local publication does not have GitHub Actions provenance.
+
+The 0.1.1 tag passed both platforms but publication failed before npm authentication: a relative tarball path without `./` was parsed as GitHub shorthand (exit 128). The version was not published. The path was corrected for 0.1.2 and checked with `npm publish ./release-assets/dsh-tutorloop-0.1.1.tgz --dry-run`; the original failed tag is retained. The maintainer configured npm Trusted Publisher; the new tag's Release run is the acceptance check for OIDC.
 
 ## Still requires acceptance
 
 - Installing and using the plugin in the user's active DSH profile; local contract/component tests do not replace this check.
 - Teaching quality and subjective feedback with a real provider/model. No paid model calls or credentials were used in these tests.
 - Visual accuracy of diagrams, tables or scanned PDFs; extraction is text-based.
-- Trusted-publisher/environment configuration for CI releases. Initial npm publication uses maintainer authentication; a successful build or Git push does not publish the package.

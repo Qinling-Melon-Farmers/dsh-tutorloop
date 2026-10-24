@@ -59,7 +59,7 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           NPM_DIST_TAG: ${{ steps.release.outputs.dist_tag }}
-        run: npm publish "release-artifact/dsh-tutorloop-$RELEASE_VERSION.tgz" --access public --provenance --tag "$NPM_DIST_TAG"
+        run: npm publish "./release-artifact/dsh-tutorloop-$RELEASE_VERSION.tgz" --access public --provenance --tag "$NPM_DIST_TAG"
       - name: Verify public npm availability and download the exact release asset
         id: asset
         run: node scripts/release.mjs asset

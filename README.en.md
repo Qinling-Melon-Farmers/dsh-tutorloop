@@ -29,9 +29,9 @@ Requires **DSH 0.2.1-rc.2**, Node **22.19+ or 24+**, and Python **3.11+**. The d
 Install from npm into the DSH web profile and initialize the local backend:
 
 ```sh
-dsh plugin --profile web add dsh-tutorloop@0.1.1
-npx --yes --package=dsh-tutorloop@0.1.1 dsh-tutorloop setup
-npx --yes --package=dsh-tutorloop@0.1.1 dsh-tutorloop doctor
+dsh plugin --profile web add dsh-tutorloop@0.1.2
+npx --yes --package=dsh-tutorloop@0.1.2 dsh-tutorloop setup
+npx --yes --package=dsh-tutorloop@0.1.2 dsh-tutorloop doctor
 ```
 
 You can also select `dsh-tutorloop` in the DSH plugin manager.
