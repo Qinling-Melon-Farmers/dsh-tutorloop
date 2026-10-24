@@ -130,11 +130,24 @@ test('native view mounts with session scope, student records, forms and disposes
     assert.equal(opened, 'chat')
     assert.equal(copiedText, '请读取 TutorLoop 当前练习，按材料批改我刚提交的答案。')
     assert.match(document.body.textContent, /批改请求已复制/)
+    // 模拟聊天模型批改完成:刷新后应渲染分项表格、遗漏要点与材料外推断。
+    currentAttempts = [{ id: 'a1', answer, status: 'graded', assisted: 0,
+      feedback: { score: 8, max_score: 10, next_skill: '依据判断', next_exercise_instruction: '换同类材料重写。',
+        criteria: [{ name: '原因', awarded: 4, max_points: 4, feedback: '要点准确。', evidence_ids: ['P1'], student_span: '取消试样检验' }],
+        omissions: ['启示缺少可执行动作'], unsupported_claims: ['“市场调研不足”为材料外推断'],
+        organization_feedback: '结构清楚。', improved_answer: '改进后的示范答案。' } }]
+    await flush(() => button('我已发送，刷新批改').click())
+    assert.ok(document.querySelector('table.tutorloop-table'))
+    assert.match(document.body.textContent, /原因 4\/4|原因.*4\/4/)
+    assert.match(document.body.textContent, /遗漏要点/)
+    assert.match(document.body.textContent, /材料外推断/)
+    assert.match(document.body.textContent, /“市场调研不足”为材料外推断/)
+    assert.match(document.body.textContent, /改进后的示范答案。/)
     const language = document.querySelector('select[aria-label="Language / 语言"]')
     await flush(() => { language.value = 'en'; language.dispatchEvent(new window.Event('change', { bubbles: true })) })
-    assert.match(document.body.textContent, /Ask tutor to review/)
+    assert.match(document.body.textContent, /Criteria scores/)
     assert.match(document.body.textContent, /Your attempts/)
-    assert.match(document.body.textContent, /awaiting feedback/)
+    assert.match(document.body.textContent, /Attempt 1 · Reviewed/)
     assert.match(document.body.textContent, /从过去持续到现在/)
     assert.equal(document.querySelector('.tutorloop-panel').lang, 'en')
     assert.deepEqual(savedLanguage, { language: 'en', resolved_language: 'en' })
