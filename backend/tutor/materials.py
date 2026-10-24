@@ -16,7 +16,8 @@ def workspace_path(path, *, directory=False):
     configured = os.environ.get('TUTOR_WORKSPACE_PATH', '').strip()
     if not configured:
         raise ValueError('未配置TUTOR_WORKSPACE_PATH，不能读取本机资料。')
-    root = Path(configured).expanduser().resolve(strict=True)
+    configured_root = Path(os.path.abspath(Path(configured).expanduser()))
+    root = configured_root.resolve(strict=True)
     if not root.is_dir():
         raise ValueError('工作区路径不是文件夹。')
     candidate = Path(path).expanduser()
@@ -25,7 +26,9 @@ def workspace_path(path, *, directory=False):
     # Reject lexical escapes (including another Windows drive/UNC share) before
     # resolving a potentially remote or inaccessible out-of-workspace path.
     lexical = Path(os.path.abspath(candidate))
-    if not lexical.is_relative_to(root):
+    # Windows may supply the configured workspace through its 8.3 spelling.
+    # Accept that spelling and its resolved form, then enforce the real target.
+    if not (lexical.is_relative_to(root) or lexical.is_relative_to(configured_root)):
         raise ValueError('资料路径必须位于当前工作区内。')
     resolved = lexical.resolve(strict=True)
     if not resolved.is_relative_to(root):

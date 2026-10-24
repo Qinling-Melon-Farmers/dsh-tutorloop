@@ -22,7 +22,8 @@ child.stderr.on('data', chunk => record(chunk, process.stderr))
 child.once('error', error => { tail += error.message; process.exitCode = 1 })
 child.once('close', code => {
   if (code !== 0) {
-    const escaped = tail.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+    const diagnostics = tail.split('\n').filter(line => !/ \.\.\. ok\s*$/.test(line) && !/^✔/.test(line)).join('\n').slice(-4000)
+    const escaped = diagnostics.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
     console.error(`::error title=TutorLoop ${name} check::${escaped}`)
     process.exitCode = code || 1
   }

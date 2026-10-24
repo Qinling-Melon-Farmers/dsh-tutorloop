@@ -4,7 +4,7 @@ Date: 2026-10-25. Version: 0.1.0.
 
 ## Automated checks
 
-- 70 Python tests cover the teaching workflow, frozen grading contracts, persistence, source handling, workspace-bound imports, language preferences and mocked model/network failures.
+- 71 Python tests cover the teaching workflow, frozen grading contracts, persistence, source handling, workspace-bound imports (including Windows short-path aliases), language preferences and mocked model/network failures.
 - Node tests cover child-process behavior, tool contracts, browser/host action boundaries, native view lifecycle, language persistence and the real bundled-Python teaching flow. The integration test must be enabled with `TUTORLOOP_E2E=1` or `TUTORLOOP_TEST_PYTHON`.
 - Three mocked GitHub automation tests cover advisory issue guidance. The bot does not close issues or require private data.
 - The 17 tool input/output schemas were checked against the installed DSH 0.2.1-rc.2 schema validator.

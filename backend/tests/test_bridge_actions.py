@@ -64,6 +64,23 @@ class BridgeActionsTest(unittest.TestCase):
         self.assertEqual(second['added_chunks'], 0)
         self.assertEqual(len(second['skipped']), 1)
 
+    def test_configured_workspace_alias_accepts_its_own_absolute_child(self):
+        source = self.workspace / 'aliases.md'
+        source.write_text('An imported source must retain its verified workspace boundary. ' * 10, encoding='utf-8')
+        alias = self.root / 'workspace-alias'
+        original_resolve = Path.resolve
+        # Model the alternate spelling returned by Windows TEMP (RUNNER~1)
+        # without depending on that volume having 8.3 name creation enabled.
+        def resolve(path, **kwargs):
+            if path == alias:
+                return original_resolve(self.workspace, **kwargs)
+            if path == alias / source.name:
+                return original_resolve(source, **kwargs)
+            return original_resolve(path, **kwargs)
+        with patch.dict(os.environ, {'TUTOR_WORKSPACE_PATH': str(alias)}), patch('tutor.materials.Path.resolve', autospec=True, side_effect=resolve):
+            result = self.action('import_file', path=str(alias / source.name))
+        self.assertGreater(result['added_chunks'], 0)
+
     def test_missing_workspace_and_path_escape_rejected_without_reading(self):
         outside = self.root / 'private.txt'
         outside.write_text('private', encoding='utf-8')
