@@ -1,0 +1,48 @@
+name: Bug report / 问题反馈
+description: Report unexpected behavior with a small, redacted example.
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English and Chinese reports are welcome. Do not include API keys, cookies, personal answers, private PDFs, or your learning database. Plain-text errors are enough; a patch or screenshot is optional.
+        欢迎中文反馈。请删除密钥、登录信息和私人学习记录；不要求提交代码补丁。
+  - type: dropdown
+    id: type
+    attributes:
+      label: Report type
+      options: [Bug]
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What failed, and how does it affect learning?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal example and the actual error. Avoid sharing copyrighted course material or private learning records.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: TutorLoop/DSH versions, OS, Node/Python versions, and native panel or tool usage. Redact local paths if needed.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Optional evidence
+      description: Redacted logs, screenshots, or a small public source link. Please explain any grading error without uploading your whole database.

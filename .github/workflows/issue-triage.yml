@@ -1,0 +1,86 @@
+name: Issue guidance
+on:
+  issues:
+    types: [opened, edited, reopened]
+permissions:
+  issues: write
+concurrency:
+  group: issue-guidance-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  guide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No checkout: issue text is data, never shell/script input or executable code.
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (!issue || issue.pull_request || issue.state !== 'open') return;
+            const body = (issue.body || '').slice(0, 65536);
+            const sections = new Map();
+            let heading = null;
+            for (const line of body.split(/\r?\n/)) {
+              if (/^###\s+/.test(line)) {
+                heading = line.replace(/^###\s+/, '').trim().toLowerCase();
+                sections.set(heading, '');
+              } else if (heading) sections.set(heading, sections.get(heading) + line + '\n');
+            }
+            const read = label => (sections.get(label.toLowerCase()) || '').replace(/<!--[\s\S]*?-->/g, '').trim();
+            const blank = value => !value || /^_?no response_?$/i.test(value);
+            const type = read('Report type');
+            const classification = new Map([['Bug', 'bug'], ['Feature', 'enhancement']]).get(type);
+            const labels = new Map([
+              ['needs-triage', { color: 'ededed', description: 'Awaiting human review' }],
+              ['bug', { color: 'd73a4a', description: 'Unexpected behavior reported by a user' }],
+              ['enhancement', { color: 'a2eeef', description: 'Feature or workflow suggestion' }],
+            ]);
+            const toAdd = [];
+            if (context.payload.action === 'opened') toAdd.push('needs-triage');
+            if (classification) toAdd.push(classification);
+            for (const name of toAdd) {
+              try {
+                try { await github.rest.issues.getLabel({ ...context.repo, name }); }
+                catch (error) {
+                  if (error.status !== 404) throw error;
+                  try { await github.rest.issues.createLabel({ ...context.repo, name, ...labels.get(name) }); }
+                  catch (creation) { if (creation.status !== 422) throw creation; }
+                }
+                await github.rest.issues.addLabels({ ...context.repo, issue_number: issue.number, labels: [name] });
+              } catch { core.warning('Could not apply a triage label; the report remains open.'); }
+            }
+            const required = classification === 'bug'
+              ? ['Summary', 'Expected behavior', 'Steps to reproduce', 'Environment']
+              : classification === 'enhancement' ? ['Summary', 'Use case', 'Desired behavior'] : [];
+            const missing = required.filter(label => blank(read(label)));
+            const normalize = title => title.slice(0, 256).toLowerCase().replace(/^\[(bug|feature)\]\s*/i, '').replace(/[^\p{L}\p{N}]/gu, '');
+            const pairs = title => new Set(Array.from({ length: Math.max(0, title.length - 1) }, (_, index) => title.slice(index, index + 2)));
+            const target = normalize(issue.title || '');
+            const targetPairs = pairs(target);
+            let related = [];
+            if (target.length >= 6) {
+              try {
+                const { data } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', sort: 'updated', per_page: 100 });
+                related = data.filter(item => !item.pull_request && item.number !== issue.number).map(item => {
+                  const candidate = normalize(item.title || '');
+                  const candidatePairs = pairs(candidate);
+                  const common = [...targetPairs].filter(pair => candidatePairs.has(pair)).length;
+                  const score = target === candidate ? 1 : 2 * common / Math.max(1, targetPairs.size + candidatePairs.size);
+                  return { number: item.number, score };
+                }).filter(item => item.score >= 0.72).sort((a, b) => b.score - a.score).slice(0, 3);
+              } catch { core.warning('Related-issue lookup unavailable; a maintainer can compare reports manually.'); }
+            }
+            const marker = '<!-- tutorloop-issue-guidance-v1 -->';
+            const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number: issue.number, per_page: 100 });
+            const existing = comments.find(comment => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
+            if (!missing.length && !related.length && !existing) return;
+            const message = [marker, 'Thanks for the report / 感谢反馈。', ''];
+            if (missing.length) message.push('Please add these details when available: ' + missing.join(', ') + '.', 'Plain-text errors are enough; a patch or screenshot is optional. 请补充现有 Issue，无需重提。', '');
+            if (related.length) message.push('Potentially related reports (title similarity only): ' + related.map(item => '#' + item.number).join(', ') + '.', 'A maintainer will compare symptoms and versions; these are not automatic duplicate decisions.', '');
+            if (!missing.length && !related.length) message.push('The requested sections are now present. A maintainer will review the report.', '');
+            message.push('This advice never closes or locks an issue. Please redact keys, cookies, private answers, course PDFs, and learning databases.', '此提示不会自动关闭或锁定问题；请勿公开私人学习记录或登录信息。');
+            const commentBody = message.join('\n');
+            if (existing) {
+              if (existing.body !== commentBody) await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body: commentBody });
+            } else await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: commentBody });

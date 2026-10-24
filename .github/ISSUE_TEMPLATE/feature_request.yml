@@ -1,0 +1,36 @@
+name: Feature request / 功能建议
+description: Suggest a learning workflow, integration, accessibility, or documentation improvement.
+title: '[Feature] '
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Report type
+      options: [Feature]
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: English or Chinese is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: usecase
+    attributes:
+      label: Use case
+      description: What are you learning, and where does the current workflow fall short?
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: Desired behavior
+      description: Describe the useful outcome; an implementation or patch is optional.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

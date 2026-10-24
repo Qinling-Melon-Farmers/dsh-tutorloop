@@ -1,0 +1,32 @@
+{
+  "name": "dsh-tutorloop",
+  "version": "0.1.0",
+  "description": "Evidence-grounded learning for DeepSeek Harness: guided practice, feedback and spaced review with a local learning record.",
+  "type": "module",
+  "engines": { "node": "^22.19.0 || >=24.0.0" },
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js", "./client": "./lib/client.js", "./package.json": "./package.json" },
+  "bin": { "dsh-tutorloop": "./scripts/cli.mjs" },
+  "files": ["src/*.js", "lib/client.js", "backend/bridge.py", "backend/tutor/*.py", "backend/data/seed_catalog.json", "backend/data/method_cards.json", "backend/requirements.txt", "scripts/runtime.mjs", "scripts/cli.mjs", "cordis.patch.yml", "README.md", "README.en.md", "docs/*.md", "LICENSE"],
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.js",
+    "test:python": "node scripts/test-backend.mjs",
+    "check:package": "node scripts/check-package.mjs",
+    "prepack": "npm run build",
+    "pack:local": "npm pack",
+    "doctor": "node scripts/cli.mjs doctor"
+  },
+  "dsh": {
+    "engines": { "dsh": ">=0.2.1-rc.2 <0.3.0-0" },
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "inject": ["@deepseek-ai/dsh-api-session-controller", "@deepseek-ai/dsh-client-ui-renderer", "@deepseek-ai/dsh-client-ui-session", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-settings-general"], "platform": "web" }
+  },
+  "devDependencies": { "esbuild": "0.28.2", "react": "18.3.1", "react-dom": "18.3.1", "jsdom": "26.1.0", "playwright": "1.58.2" },
+  "license": "Apache-2.0",
+  "keywords": ["deepseek", "dsh", "dsh-plugin", "tutor", "learning", "spaced-repetition", "local-first"],
+  "repository": { "type": "git", "url": "git+https://github.com/Qinling-Melon-Farmers/dsh-tutorloop.git" },
+  "homepage": "https://github.com/Qinling-Melon-Farmers/dsh-tutorloop#readme",
+  "bugs": { "url": "https://github.com/Qinling-Melon-Farmers/dsh-tutorloop/issues" },
+  "publishConfig": { "access": "public" }
+}

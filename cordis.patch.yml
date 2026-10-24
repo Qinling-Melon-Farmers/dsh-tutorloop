@@ -1,0 +1,4 @@
+# Host tools + optional native web panel. Model inference uses the DSH session.
+- insert:
+    - id: tutorloop
+      name: dsh-tutorloop

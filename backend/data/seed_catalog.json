@@ -1,0 +1,422 @@
+{
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "id": "outline_2026",
+      "url": "https://www.xunwu.gov.cn/xwxxxgk/xwrs721/202510/76b534c0ebaf46cca71e45086a6cb562.shtml",
+      "title": "中央机关及其直属机构2026年度考试录用公务员公共科目笔试考试大纲",
+      "source_type": "government_republication",
+      "publisher": "寻乌县人民政府网站",
+      "published_at": "2025-10-14",
+      "verified_at": "2026-10-24",
+      "brief": "政府网站公开转载的大纲，可用于确认行测各模块、申论分级测查能力与公开例题。省级职位训练应落实阅读、分析、解决问题和书面表达；产品设计的细分技能和分值仍属于教学方案。",
+      "subject": [
+        "申论",
+        "行测"
+      ],
+      "skills": [
+        "阅读理解",
+        "综合分析",
+        "提出和解决问题",
+        "文字表达",
+        "判断推理",
+        "资料分析",
+        "言语理解与表达"
+      ],
+      "usage": "引用链接与原创概述；必要时按小段核验例题，不将全部题库复制入库。",
+      "version_note": "这是2026年度大纲，不能自动等同于2027年度大纲；年度更新需另核验。"
+    },
+    {
+      "id": "stats_yoy_mom",
+      "url": "https://www.stats.gov.cn/zs/tjws/tjbk/202301/t20230101_1912960.html",
+      "title": "同比与环比有何不同",
+      "source_type": "official_method_explanation",
+      "publisher": "国家统计局",
+      "published_at": "2025-07-17",
+      "verified_at": "2026-10-24",
+      "brief": "同比的基期是上年同期，环比的基期是紧邻的上一统计周期。先识别比较时间再代入增长率，避免把不同基期的百分比直接比较。季节性与基期波动会影响指标解读。",
+      "subject": [
+        "行测"
+      ],
+      "skills": [
+        "资料分析",
+        "基期识别",
+        "同比与环比",
+        "增长率"
+      ],
+      "usage": "链接作概念核验，练习数据另行自编。"
+    },
+    {
+      "id": "stats_growth",
+      "url": "https://www.stats.gov.cn/zs/tjll/sjxl/202307/t20230720_1941411.html",
+      "title": "增长速度",
+      "source_type": "official_method_explanation",
+      "publisher": "国家统计局",
+      "published_at": "2023-07-20",
+      "verified_at": "2026-10-24",
+      "brief": "增长率反映相对于基期的增减幅度；发展速度扣除一个基数得到增长速度。选择逐期或固定基期后才能解释计算结果，增长量与增长率是不同指标。",
+      "subject": [
+        "行测"
+      ],
+      "skills": [
+        "资料分析",
+        "增长量",
+        "增长率",
+        "发展速度"
+      ],
+      "usage": "用于概念纠错与计算依据，不替代对题目单位和时间范围的检查。"
+    }
+  ],
+  "exercises": [
+    {
+      "question": {
+        "id": "original_shenlun_001",
+        "subject": "申论",
+        "skill": "证据定位",
+        "question_type": "short_answer",
+        "options": [],
+        "correct_option_id": null,
+        "explanation": "P1与P2都涉及减材料，但一个是表单流程、一个是信息共享，概括时可合并表达并保留两项事实。P3包含受众与两项服务，不应凭空扩大成所有事项全程网上办。",
+        "difficulty": "基础",
+        "material": "[P1] 青禾社区将养老服务申请表由六张合并为一张，申请人只需提交一次身份材料。\n[P2] 社区与民政部门共享已核验的信息，申请人不再重复提交收入证明。\n[P3] 对行动不便的老人，工作人员预约上门收件，并通过电话告知办理进度。",
+        "stem": "概括青禾社区优化养老服务办理的主要举措，不超过60字。",
+        "word_limit": 60,
+        "reference_answer": "精简表单，减少重复提交；共享核验信息；为行动不便老人上门收件，电话反馈进度。",
+        "rubric": [
+          {
+            "name": "流程精简",
+            "requirement": "精简表单或减少提交",
+            "points": 3,
+            "evidence_ids": [
+              "P1"
+            ]
+          },
+          {
+            "name": "信息共享",
+            "requirement": "共享核验信息或免重复证明",
+            "points": 3,
+            "evidence_ids": [
+              "P2"
+            ]
+          },
+          {
+            "name": "便利服务",
+            "requirement": "上门收件并电话反馈进度",
+            "points": 4,
+            "evidence_ids": [
+              "P3"
+            ]
+          }
+        ],
+        "hint": "每段分别做了什么？"
+      },
+      "sources": [
+        {
+          "id": "P1",
+          "title": "从事项提炼服务举措（自编材料）",
+          "locator": "P1",
+          "url": "",
+          "kind": "synthetic_case",
+          "text": "青禾社区将养老服务申请表由六张合并为一张，申请人只需提交一次身份材料。"
+        },
+        {
+          "id": "P2",
+          "title": "从事项提炼服务举措（自编材料）",
+          "locator": "P2",
+          "url": "",
+          "kind": "synthetic_case",
+          "text": "社区与民政部门共享已核验的信息，申请人不再重复提交收入证明。"
+        },
+        {
+          "id": "P3",
+          "title": "从事项提炼服务举措（自编材料）",
+          "locator": "P3",
+          "url": "",
+          "kind": "synthetic_case",
+          "text": "对行动不便的老人，工作人员预约上门收件，并通过电话告知办理进度。"
+        }
+      ],
+      "origin": "自编",
+      "is_official_exam": false
+    },
+    {
+      "question": {
+        "id": "original_shenlun_002",
+        "subject": "申论",
+        "skill": "依据判断",
+        "question_type": "short_answer",
+        "options": [],
+        "correct_option_id": null,
+        "explanation": "P1给出取消检验在前、开裂与退货在后的关系。C以具体措施解释后果。A添加未证实的调研情况及‘全部滞销’，B倒置因果，D把单一事件泛化为必然规律。",
+        "difficulty": "提高",
+        "material": "[P1] 某手工陶器作坊为缩短工期，取消了产品烧制前的试样检验。新批次产品开裂增多，退货随之增加。材料未说明该作坊是否开展市场调研。",
+        "stem": "概括作坊产品质量问题的原因及启示，不超过80字。",
+        "word_limit": 80,
+        "reference_answer": "为缩短工期取消试样检验，使质量风险未能及时发现，开裂与退货增加。应保留必要检验，兼顾效率与质量。",
+        "rubric": [
+          {
+            "name": "原因",
+            "requirement": "取消烧制前试样检验",
+            "points": 4,
+            "evidence_ids": [
+              "P1"
+            ]
+          },
+          {
+            "name": "后果",
+            "requirement": "开裂增多、退货增加",
+            "points": 3,
+            "evidence_ids": [
+              "P1"
+            ]
+          },
+          {
+            "name": "启示",
+            "requirement": "兼顾效率与质量、保留必要检验",
+            "points": 3,
+            "evidence_ids": [
+              "P1"
+            ]
+          }
+        ],
+        "hint": "先按时间顺序连接事件。"
+      },
+      "sources": [
+        {
+          "id": "P1",
+          "title": "因果与无据推断（自编材料）",
+          "locator": "P1",
+          "url": "",
+          "kind": "synthetic_case",
+          "text": "某手工陶器作坊为缩短工期，取消了产品烧制前的试样检验。新批次产品开裂增多，退货随之增加。材料未说明该作坊是否开展市场调研。"
+        }
+      ],
+      "origin": "自编",
+      "is_official_exam": false
+    },
+    {
+      "question": {
+        "id": "original_data_001",
+        "subject": "行测",
+        "skill": "增长率",
+        "question_type": "single_choice",
+        "options": [
+          {
+            "id": "A",
+            "text": "20%、32%"
+          },
+          {
+            "id": "B",
+            "text": "32%、20%"
+          },
+          {
+            "id": "C",
+            "text": "24.24%、16.67%"
+          },
+          {
+            "id": "D",
+            "text": "32%、22%"
+          }
+        ],
+        "correct_option_id": "B",
+        "explanation": "同比基期是2025年3月：1320/1000-1=32%。环比基期是2026年2月：1320/1100-1=20%。分母使用基期数。",
+        "difficulty": "基础",
+        "material": "[P1] 某服务站2025年3月办件量为1000件，2026年2月为1100件，2026年3月为1320件。以上数据均为当月办件量。",
+        "stem": "2026年3月办件量同比和环比增速分别为多少？",
+        "word_limit": 100,
+        "reference_answer": "B",
+        "rubric": [
+          {
+            "name": "正确选择",
+            "requirement": "选择B",
+            "points": 10,
+            "evidence_ids": [
+              "P1"
+            ]
+          }
+        ],
+        "hint": "同比找上年同月，环比找上月。"
+      },
+      "sources": [
+        {
+          "id": "P1",
+          "title": "先找比较基期（自编材料）",
+          "locator": "P1",
+          "url": "",
+          "kind": "synthetic_case",
+          "text": "某服务站2025年3月办件量为1000件，2026年2月为1100件，2026年3月为1320件。以上数据均为当月办件量。"
+        }
+      ],
+      "origin": "自编",
+      "is_official_exam": false
+    },
+    {
+      "question": {
+        "id": "original_logic_001",
+        "subject": "行测",
+        "skill": "逆否推理",
+        "question_type": "single_choice",
+        "options": [
+          {
+            "id": "A",
+            "text": "小林通过了信息安全培训"
+          },
+          {
+            "id": "B",
+            "text": "所有通过培训者都已开通权限"
+          },
+          {
+            "id": "C",
+            "text": "未开通权限者都没有通过培训"
+          },
+          {
+            "id": "D",
+            "text": "小林是唯一通过培训者"
+          }
+        ],
+        "correct_option_id": "A",
+        "explanation": "把通过培训记为T，开通权限记为P。规则为P→T，已知P，所以推出T。B与C都将必要条件误当成充分条件，D添加人数限制。",
+        "difficulty": "基础",
+        "material": "[P1] 某中心规定：只有通过信息安全培训，员工才能开通数据查询权限。小林已经开通了数据查询权限。该规定得到严格执行。",
+        "stem": "由上述条件必然可以推出什么？",
+        "word_limit": 100,
+        "reference_answer": "A",
+        "rubric": [
+          {
+            "name": "正确选择",
+            "requirement": "选择A",
+            "points": 10,
+            "evidence_ids": [
+              "P1"
+            ]
+          }
+        ],
+        "hint": "‘只有T才P’写作P推出T。"
+      },
+      "sources": [
+        {
+          "id": "P1",
+          "title": "必要条件与逆否（自编材料）",
+          "locator": "P1",
+          "url": "",
+          "kind": "synthetic_case",
+          "text": "某中心规定：只有通过信息安全培训，员工才能开通数据查询权限。小林已经开通了数据查询权限。该规定得到严格执行。"
+        }
+      ],
+      "origin": "自编",
+      "is_official_exam": false
+    },
+    {
+      "question": {
+        "id": "original_language_001",
+        "subject": "行测",
+        "skill": "转折关系",
+        "question_type": "single_choice",
+        "options": [
+          {
+            "id": "A",
+            "text": "传统工艺应停止网络销售"
+          },
+          {
+            "id": "B",
+            "text": "统一布景是传统工艺传播的唯一障碍"
+          },
+          {
+            "id": "C",
+            "text": "传统工艺数字传播应兼顾产品展示与文化解释"
+          },
+          {
+            "id": "D",
+            "text": "线上销量可以完全衡量工艺的文化价值"
+          }
+        ],
+        "correct_option_id": "C",
+        "explanation": "前句交代网络传播的收益，转折句指出内容同质化的问题，末句提出兼顾产品与文化的建议。C概括全文落点；A、B、D均扩大或偏离原意。",
+        "difficulty": "基础",
+        "material": "[P1] 不少地方把传统工艺搬上网络，销售范围因此扩大。但如果展示只剩统一布景和复制话术，工艺背后的地方生活与技艺细节便容易被遮蔽。因此，数字传播既要让产品被看见，也要让其文化来历被理解。",
+        "stem": "这段文字意在强调什么？",
+        "word_limit": 100,
+        "reference_answer": "C",
+        "rubric": [
+          {
+            "name": "正确选择",
+            "requirement": "选择C",
+            "points": 10,
+            "evidence_ids": [
+              "P1"
+            ]
+          }
+        ],
+        "hint": "留意‘但’和‘因此’连接的内容。"
+      },
+      "sources": [
+        {
+          "id": "P1",
+          "title": "把握转折后的主旨（自编材料）",
+          "locator": "P1",
+          "url": "",
+          "kind": "synthetic_case",
+          "text": "不少地方把传统工艺搬上网络，销售范围因此扩大。但如果展示只剩统一布景和复制话术，工艺背后的地方生活与技艺细节便容易被遮蔽。因此，数字传播既要让产品被看见，也要让其文化来历被理解。"
+        }
+      ],
+      "origin": "自编",
+      "is_official_exam": false
+    },
+    {
+      "question": {
+        "id": "original_quantity_001",
+        "subject": "行测",
+        "skill": "数量关系：工程问题",
+        "question_type": "single_choice",
+        "options": [
+          {
+            "id": "A",
+            "text": "6天"
+          },
+          {
+            "id": "B",
+            "text": "7.2天"
+          },
+          {
+            "id": "C",
+            "text": "9天"
+          },
+          {
+            "id": "D",
+            "text": "15天"
+          }
+        ],
+        "correct_option_id": "B",
+        "explanation": "合作效率为1/12+1/18=5/36，时间为36/5=7.2天。",
+        "difficulty": "基础",
+        "material": "[P1] 甲队单独完成一项工程需要12天，乙队单独完成同一工程需要18天。两队效率恒定，合作时效率相加。",
+        "stem": "两队共同施工完成该工程需要多少天？",
+        "word_limit": 20,
+        "reference_answer": "B：7.2天",
+        "rubric": [
+          {
+            "name": "正确选择",
+            "requirement": "选择B",
+            "points": 10,
+            "evidence_ids": [
+              "P1"
+            ]
+          }
+        ],
+        "hint": "将总工程量设为1，先求两队每天完成的比例。"
+      },
+      "sources": [
+        {
+          "id": "P1",
+          "title": "工程合作（自编材料）",
+          "locator": "P1",
+          "url": "",
+          "kind": "synthetic_case",
+          "text": "甲队单独完成一项工程需要12天，乙队单独完成同一工程需要18天。两队效率恒定，合作时效率相加。"
+        }
+      ],
+      "origin": "自编",
+      "is_official_exam": false
+    }
+  ]
+}

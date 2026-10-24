@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Setup and troubleshooting
+    url: https://github.com/Qinling-Melon-Farmers/dsh-tutorloop/blob/main/README.md
+    about: Start here for installation, Python setup, and workspace configuration.

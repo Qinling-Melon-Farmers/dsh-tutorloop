@@ -1,0 +1,50 @@
+name: Publish to npm
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact package version to publish (for example 0.1.0)'
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    environment: npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Check requested version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node -e "if (process.env.RELEASE_VERSION !== require('./package.json').version) throw new Error('Version mismatch')"
+      - run: npm ci
+      - run: node --test .github/tests/*.test.cjs
+      - run: python -m pip install -r backend/requirements.txt
+      - run: npm run build
+      - run: npm test
+        env:
+          TUTORLOOP_E2E: '1'
+      - run: python -X utf8 -m unittest discover -s tests -v
+        working-directory: backend
+      - run: npm run check:package
+      - name: Require npm trusted publishing support
+        run: node -e "const [major,minor,patch]=require('child_process').execFileSync('npm',['--version'],{encoding:'utf8'}).trim().split('.').map(Number);if(major<11||(major===11&&(minor<5||(minor===5&&patch<1))))throw new Error('Trusted publishing requires npm >=11.5.1; update the runner Node release')"
+      - name: Publish with npm trusted publishing
+        run: npm publish --access public --provenance
