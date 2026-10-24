@@ -13,9 +13,9 @@ GUI 与教学交互默认中文。语言设置提供 **中文 / English / 跟随
 从 npm 安装到 DSH 的 web profile，并初始化本地运行环境：
 
 ```powershell
-dsh plugin --profile web add dsh-tutorloop@0.1.0
-npx --yes --package=dsh-tutorloop@0.1.0 dsh-tutorloop setup
-npx --yes --package=dsh-tutorloop@0.1.0 dsh-tutorloop doctor
+dsh plugin --profile web add dsh-tutorloop@0.1.1
+npx --yes --package=dsh-tutorloop@0.1.1 dsh-tutorloop setup
+npx --yes --package=dsh-tutorloop@0.1.1 dsh-tutorloop doctor
 ```
 
 也可以在 DSH 插件管理器中选择 `dsh-tutorloop`。按宿主要求重载后，打开学习工作区的会话，选择 **TutorLoop** 页面。若提示工作区尚未确认，在该会话中先发送一条消息再刷新。
@@ -33,7 +33,7 @@ node scripts/cli.mjs doctor
 npm pack
 ```
 
-在 DSH 插件管理器中安装生成的 `dsh-tutorloop-0.1.0.tgz`。
+在 DSH 插件管理器中安装生成的 `dsh-tutorloop-0.1.1.tgz`。
 
 </details>
 
