@@ -23,4 +23,4 @@ CI repeats build, Node/real-backend tests, Python tests and package inspection o
 - Installing and using the plugin in the user's active DSH profile; local contract/component tests do not replace this check.
 - Teaching quality and subjective feedback with a real provider/model. No paid model calls or credentials were used in these tests.
 - Visual accuracy of diagrams, tables or scanned PDFs; extraction is text-based.
-- First npm publication and trusted-publisher/environment configuration. A successful build or Git push does not publish the package.
+- Trusted-publisher/environment configuration for CI releases. Initial npm publication uses maintainer authentication; a successful build or Git push does not publish the package.

@@ -22,9 +22,22 @@ The learning loop is: establish a goal → inspect source material → freeze a 
 
 The package includes its Python backend. Streamlit and a separately checked-out backend project are **not required**.
 
-## Install from this repository
+## Install
 
-Requires **DSH 0.2.1-rc.2**, Node **22.19+ or 24+**, and Python **3.11+**. The declared DSH compatibility range is `>=0.2.1-rc.2 <0.3.0-0`; the baseline tested locally is 0.2.1-rc.2. Version 0.1.0 is source-ready; availability on npm is not implied by this README.
+Requires **DSH 0.2.1-rc.2**, Node **22.19+ or 24+**, and Python **3.11+**. The declared DSH compatibility range is `>=0.2.1-rc.2 <0.3.0-0`; the baseline tested locally is 0.2.1-rc.2.
+
+Install from npm into the DSH web profile and initialize the local backend:
+
+```sh
+dsh plugin --profile web add dsh-tutorloop@0.1.0
+npx --yes --package=dsh-tutorloop@0.1.0 dsh-tutorloop setup
+npx --yes --package=dsh-tutorloop@0.1.0 dsh-tutorloop doctor
+```
+
+You can also select `dsh-tutorloop` in the DSH plugin manager.
+
+<details>
+<summary>Build a local package from source</summary>
 
 ```sh
 git clone https://github.com/Qinling-Melon-Farmers/dsh-tutorloop.git
@@ -36,9 +49,13 @@ node scripts/cli.mjs doctor
 npm pack
 ```
 
+Install the generated tarball through the DSH plugin manager.
+
+</details>
+
 `setup` creates an isolated Python environment in `~/.cache/dsh-tutorloop/venv` and installs the backend requirements. It is an explicit step: npm installation does not run pip. If Python is not on PATH, use `setup --python /absolute/path/to/python`. To use an existing prepared environment, set `TUTORLOOP_PYTHON` to its executable instead.
 
-Install the resulting `dsh-tutorloop-0.1.0.tgz` through your DSH plugin manager's local-package installation. Its bundle patch inserts only TutorLoop's plugin row. Restart/reload the host as required by your DSH installation, open a conversation in your learning workspace, and select the **TutorLoop** view. If the panel says the workspace is not yet confirmed, send one message in that conversation and refresh the panel.
+The bundle patch inserts only TutorLoop's plugin row. Restart/reload the host as required by your DSH installation, open a conversation in your learning workspace, and select the **TutorLoop** view. If the panel says the workspace is not yet confirmed, send one message in that conversation and refresh the panel.
 
 In chat, try:
 
