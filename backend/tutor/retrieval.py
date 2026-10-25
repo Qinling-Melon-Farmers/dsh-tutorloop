@@ -50,13 +50,33 @@ def _corpus_index(chunks):
         return index
 
 
-def retrieve(query: str, chunks: list[dict], k: int = 6) -> list[dict]:
-    if not query.strip() or not chunks or k <= 0:
+# 每次工具调用都是新进程，索引缓存无法跨调用复用；语料很大时先做一次
+# 纯子串预筛（不调用分词器），再在小候选集上建 BM25，避免冷启动几十秒。
+MAX_EXACT_CORPUS = 2000
+PREFILTER_MIN = 200
+
+
+def _prefilter(terms, chunks, limit):
+    """Cheap substring candidate selection; never tokenizes the corpus."""
+    scored = []
+    for chunk in chunks:
+        text = chunk.get('search_text') or chunk['text']
+        hits = 0
+        weight = 0
+        for term in terms:
+            count = text.count(term)
+            if count:
+                hits += 1
+                weight += 5 if count > 5 else count
+        if hits:
+            scored.append((hits, weight, chunk))
+    if not scored:
         return []
-    stop = {"的", "了", "和", "与", "在", "是", "以及", "一个", "如何", "什么", "怎么", "为什么", "材料", "题目"}
-    terms = [w for w in words(query) if w not in stop]
-    if not terms:
-        return []
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [chunk for _, _, chunk in scored[:limit]]
+
+
+def _bm25_rank(terms, chunks, k):
     index = _corpus_index(chunks)
     matches = [i for i, frequencies in enumerate(index.doc_freqs) if any(term in frequencies for term in terms)]
     if not matches:
@@ -64,6 +84,21 @@ def retrieve(query: str, chunks: list[dict], k: int = 6) -> list[dict]:
     scores = index.get_scores(terms)
     top = sorted(matches, key=lambda idx: float(scores[idx]), reverse=True)[:k]
     return [chunks[idx] for idx in top]
+
+
+def retrieve(query: str, chunks: list[dict], k: int = 6) -> list[dict]:
+    if not query.strip() or not chunks or k <= 0:
+        return []
+    stop = {"的", "了", "和", "与", "在", "是", "以及", "一个", "如何", "什么", "怎么", "为什么", "材料", "题目"}
+    terms = [w for w in words(query) if w not in stop]
+    if not terms:
+        return []
+    if len(chunks) > MAX_EXACT_CORPUS:
+        candidates = _prefilter(terms, chunks, max(PREFILTER_MIN, k * 40))
+        if len(candidates) <= 1:
+            return candidates[:k]
+        return _bm25_rank(terms, candidates, k)
+    return _bm25_rank(terms, chunks, k)
 
 
 MAX_WEB_BYTES = 3 * 1024 * 1024
