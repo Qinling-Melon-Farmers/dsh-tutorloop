@@ -6,7 +6,7 @@ if (!process.env.npm_execpath) throw new Error('Run this check with npm run chec
 const output = execFileSync(process.execPath, [process.env.npm_execpath, 'pack', '--dry-run', '--ignore-scripts', '--json'], { encoding: 'utf8', windowsHide: true })
 const [pack] = JSON.parse(output)
 const paths = pack.files.map(f => f.path)
-const allowed = /^(package\.json|README(?:\.en)?\.md|LICENSE|cordis\.patch\.yml|lib\/client\.js|src\/[^/]+\.js|backend\/README\.md|backend\/bridge\.py|backend\/requirements\.txt|backend\/tutor\/[^/]+\.py|backend\/data\/(seed_catalog|method_cards)\.json|scripts\/(runtime|cli)\.mjs|docs\/[^/]+\.md)$/
+const allowed = /^(package\.json|CHANGELOG\.md|README(?:\.en)?\.md|LICENSE|cordis\.patch\.yml|lib\/client\.js|src\/[^/]+\.js|backend\/README\.md|backend\/bridge\.py|backend\/requirements\.txt|backend\/tutor\/[^/]+\.py|backend\/data\/(seed_catalog|method_cards)\.json|scripts\/(runtime|cli)\.mjs|docs\/[^/]+\.md)$/
 for (const path of paths) assert.match(path, allowed, `Unexpected package file: ${path}`)
 for (const required of ['src/index.js', 'src/server.js', 'lib/client.js', 'scripts/cli.mjs', 'scripts/runtime.mjs', 'backend/bridge.py', 'backend/tutor/materials.py', 'backend/data/seed_catalog.json', 'backend/data/method_cards.json', 'backend/requirements.txt', 'cordis.patch.yml', 'LICENSE']) {
   assert.ok(paths.includes(required), `Missing required package file: ${required}`)
