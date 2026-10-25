@@ -1,77 +1,87 @@
-# TutorLoop · 学习陪练
+# dsh-tutorloop
 
-[English](README.en.md) · [架构](docs/ARCHITECTURE.md) · [CI 与机器人](docs/AUTOMATION.md)
+> **0.3.2**:工作区信任持久化——DSH 重启后面板不再重新上锁,曾确认过的工作区自动恢复;BM25 检索在万级片段库上保持响应速度。
 
-TutorLoop 是 DeepSeek Harness 的通用学习插件。复用当前 DSH 会话的模型，通过“了解目标 → 查材料 → 冻结题目和量表 → 独立作答 → 有依据的反馈 → 换题或延迟复习”引导学习。国考行测、申论是首个示例课程，核心流程也能用于其他学科。
+[![npm version](https://img.shields.io/npm/v/dsh-tutorloop.svg)](https://www.npmjs.com/package/dsh-tutorloop)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-tutorloop.svg)](https://www.npmjs.com/package/dsh-tutorloop)
+[![license](https://img.shields.io/npm/l/dsh-tutorloop.svg)](./LICENSE)
 
-GUI 与教学交互默认中文。语言设置提供 **中文 / English / 跟随 DSH** 三种模式；“跟随 DSH”响应宿主界面语言的变化，设置会随学习工作区保存。材料原文和你的答案保留原语言。
+中文 · [English](./README.en.md) · [更新日志](./CHANGELOG.md) · [Releases](https://github.com/Qinling-Melon-Farmers/dsh-tutorloop/releases)
 
-## 安装与开始
+**DeepSeek Harness（DSH）的本地优先学习陪练插件。** 它把“了解目标 → 查材料 → 冻结题目与量表 → 独立作答 → 有依据的反馈 → 换题或延迟复习”做成可审计的闭环：题目与评分标准在作答前冻结，批改必须引用材料证据与学生原句，练习、答案、反馈与复习队列全部落盘为本工作区的学习档案。
 
-需要 DSH 0.2.1-rc.2、Node 22.19+ 或 24+、Python 3.11+。
+复用当前 DSH 会话的模型做讲解与批改，面板本身不发起模型调用;Python 教学内核随 npm 包分发,无需另装 Streamlit 或配置模型密钥。
 
-从 npm 安装到 DSH 的 web profile，并初始化本地运行环境：
+> [!IMPORTANT]
+> **要求 DSH `0.2.1-rc.2`、Node `22.19+ / 24+`、Python `3.11+`。** 面板访问的学习档案按工作区隔离;曾确认过的工作区列表保存在 `~/.dsh-tutorloop/trusted-workspaces.json`,删除该文件可撤销全部面板授权。
 
-```powershell
-dsh plugin --profile web add dsh-tutorloop@0.1.2
-npx --yes --package=dsh-tutorloop@0.1.2 dsh-tutorloop setup
-npx --yes --package=dsh-tutorloop@0.1.2 dsh-tutorloop doctor
+```bash
+dsh plugin --profile web add dsh-tutorloop@0.3.2
+npx --yes --package=dsh-tutorloop@0.3.2 dsh-tutorloop setup
+npx --yes --package=dsh-tutorloop@0.3.2 dsh-tutorloop doctor
 ```
 
-也可以在 DSH 插件管理器中选择 `dsh-tutorloop`。按宿主要求重载后，打开学习工作区的会话，选择 **TutorLoop** 页面。若提示工作区尚未确认，在该会话中先发送一条消息再刷新。
+安装后按宿主要求重载,在带工作目录的会话中打开 **TutorLoop** 页面即可。源码安装与本地打包见[开发与发布](#开发与发布)。
 
-<details>
-<summary>从源码打包安装</summary>
+## 为什么选择 TutorLoop
 
-```powershell
-git clone https://github.com/Qinling-Melon-Farmers/dsh-tutorloop.git
-cd dsh-tutorloop
-npm ci
-npm run build
-node scripts/cli.mjs setup
-node scripts/cli.mjs doctor
-npm pack
+| 能力 | 用户得到什么 |
+| --- | --- |
+| 冻结量表 | 题目、参考答案与评分标准在作答前冻结;批改不得为迎合答案修改标准 |
+| 证据批改 | 分项得分引用材料证据与学生原句,区分漏点、材料外推断与组织问题 |
+| 卷面呈现 | 材料原文与出处直接展示在题面,长材料默认折叠;参考答案不提前公开 |
+| 一键批改闭环 | 主观题提交后一键复制批改请求并切回聊天,批改完成面板自动更新 |
+| 本地真题库 | 导入解析文件后可选 219 套副省级真题与模考、约 2.3 万道已核验题目 |
+| 整卷与组卷 | 整卷逐题作答、行测单选自动判分;按科目与考点随机组卷;正确率报告 |
+| 工作区隔离 | 学习档案、导师出的题与真题库都随工作区走;面板适配任意学科,不默认国考 |
+| 可治理的记忆 | 提示与示范单独登记,带提示做对不计独立掌握;Leitner 间隔复习 |
+| 本地优先 | 全部数据在本工作区 SQLite;不内置模型密钥,不依赖云端记忆服务 |
+
+适合需要“练过即留痕、错因可回查”的个人备考与自学工作流。它不是官方考试评分系统、监考工具,也不是向量语义知识库。
+
+## 工作原理
+
+```text
+了解目标(tutor_set_profile) ──► 检索/导入材料(import/find/fetch)
+        │                              │
+        ▼                              ▼
+出题并冻结量表(create_practice) ◄── 真题库(zhenti:*/内置示例)
+        │
+        ▼
+独立作答(submit_answer, 单选自动判分) ──► 一键批改请求 → DSH 模型
+        │                                      │
+        ▼                                      ▼
+ 复习队列(1/1/3/7天) ◄── 结构化反馈(apply_feedback, 表格呈现)
 ```
 
-在 DSH 插件管理器中安装生成的 `dsh-tutorloop-0.1.2.tgz`。
+教师工具(17 个 `tutor_*` 动作)与学生面板共用同一套冻结数据:面板经 `public_exercise` 脱敏,参考答案与量表只在教师上下文出现。所有写入幂等且带版本校验,异常作答不计零分。GUI 与教学交互默认中文,语言支持中文 / English / 跟随 DSH,材料原文永不翻译。
 
-</details>
+## 配置
 
-`setup` 仅在明确执行时创建独立 Python 环境并安装依赖，npm 安装不会自动运行 pip。Python 不在 PATH 时，使用 `setup --python 'Python可执行文件的绝对路径'`。已有环境可通过 `TUTORLOOP_PYTHON` 指定。Python 内核已经包含在 npm 包中，不需要另外启动 Streamlit，也不用填写独立模型密钥。
+| 项 | 默认 | 说明 |
+| --- | --- | --- |
+| `dbPath` | `<工作区>/.dsh-tutorloop/tutor.sqlite3` | 学习档案位置;可在宿主配置显式指向既有库 |
+| `workspacePath` | 无 | 预信任的面板工作区(可选;日常无需配置) |
+| 语言 | 中文 | 中文 / English / 跟随 DSH,设置随学习工作区保存 |
 
-先设置学习目标和基础，再导入工作区里的 PDF/DOCX/TXT/MD/HTML，或者让导师搜索公开资料。可直接对 DSH 说：
+真题库数据不随包分发:把解析文件放入工作区 `粉笔试卷/答案解析/`、行测选项放入 `粉笔试卷/题目选项/`,面板首次“载入真题列表”时自动建立索引(`粉笔试卷/真题索引.json`)。
 
-> 我要备考国考副省级，每天5小时。先用一小题了解我的概括能力，一次只引导一步，等我作答后再批改。缺少材料时先搜索并保留来源，不要编造标准答案。
+## 边界
 
-内置6道自编题、8张方法卡用于体验流程；它们不构成完整备考题库。通用档案默认“尚未诊断”，不会把开发者的个人备考信息当成所有人的默认情况。
-
-## 已有能力
-
-- DSH 原生学习面板和17个教学工具。
-- 本地资料导入、网页搜索、全文检索、材料来源与PDF页码保留。
-- 练习卷面直接展示材料原文与出处；长材料默认折叠，题面只保留题干。
-- **真题库与整卷/组卷**：导入本地真题解析文件后，面板可选 219 套副省级真题与模考（约 2.3 万题）；支持整卷逐题作答（行测单选自动判分）、按科目/考点随机组卷、完成后的正确率与错题报告。
-- 题目前冻结参考答案与10分量表；批改引用材料和学生作答。
-- 选择题离线判分；主观题提交后一键复制批改请求并切回聊天，批改完成后面板自动更新，待批改不等于0分。
-- 反馈按维度表格展示得分与你的原句，并列出遗漏要点与材料外推断。
-- 提示、示范和修订单独记录，不把带提示做对当成独立掌握。
-- 练习、答案、反馈与复习队列保存在工作区 `.dsh-tutorloop/tutor.sqlite3`。
-- Memoir 只导出可审阅的学习习惯候选；不会自动写长期记忆。
-
-旧 Local Tutor 可以保留。需要共享已有学习库时，在宿主配置中显式设置 `dbPath` 为旧 `data/tutor.sqlite3` 的绝对路径。默认不读取旧库，也不复制或覆盖它；配置项见[英文 README](README.en.md)。上传或提交源码时不要附带学习库和第三方试卷。
-
-PDF 导入目前是资料入库，不是自动生成完整可判分试卷。图形、表格和扫描件需要检查或OCR。仅搜索摘要会明确标记；模型参考答案与机构解析不能自动称为官方答案。主观题评分是教学参考。
+- 评分是教学诊断:真题答案与解析来自本地核验的机构文件,不代表官方评分标准。
+- 参考答案只在交卷后经教师上下文披露;面板不是防作弊监考系统。
+- PDF 导入是资料入库(检索与出题素材),不自动生成可判分试卷。
+- Memoir 只导出可审阅的学习习惯候选摘要,不自动写长期记忆。
 
 ## 开发与发布
 
-```powershell
-npm run build
-$env:TUTORLOOP_TEST_PYTHON = '已安装后端依赖的Python路径'
-npm test
-npm run test:python
-npm run check:package
+```bash
+git clone https://github.com/Qinling-Melon-Farmers/dsh-tutorloop.git
+cd dsh-tutorloop && npm ci
+npm run build && node scripts/cli.mjs setup
+npm test && npm run test:python
 ```
 
-推送 `v*` 版本 tag 会触发 Windows/Linux 检查，通过后发布 npm 并创建 GitHub Release；首次使用自动发布需配置 npm Trusted Publisher。普通源码推送只触发 CI，详见[发布说明](docs/AUTOMATION.md)。真实模型的教学效果仍需使用你的服务商模型实际验收。
+CI(Windows/Linux 双系统)在 PR 与 main 上运行全部双栈测试;推送 `v*` 标签经 GitHub 环境校验后以 OIDC 发布 npm 并附 GitHub Release。详见 [CI 与机器人](./docs/AUTOMATION.md)、[架构说明](./docs/ARCHITECTURE.md) 与 [验证记录](./docs/VALIDATION.md)。
 
-插件打包、原生页面与项目自动化参考 [dsh-memoir](https://github.com/Qinling-Melon-Farmers/dsh-memoir)。本项目采用 [Apache-2.0](LICENSE) 许可证。
+Apache-2.0 License © 2026 Qinling-Melon-Farmers
