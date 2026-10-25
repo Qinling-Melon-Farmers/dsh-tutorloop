@@ -33,7 +33,7 @@ class WorkflowTests(unittest.TestCase):
     def feedback(self, ex):
         q = tutor.get_exercise(ex['id'])['question']
         return {'criteria': [{'name': r['name'], 'awarded': r['points'], 'feedback': '对应材料事实',
-                              'evidence_ids': r['evidence_ids']} for r in q['rubric']],
+                              'evidence_ids': r['evidence_ids'], 'student_span': '精简表单'} for r in q['rubric']],
                 'strengths': ['覆盖材料'], 'omissions': [], 'unsupported_claims': [],
                 'organization_feedback': '按事项组织', 'improved_answer': q['reference_answer'],
                 'next_skill': q['skill'], 'next_exercise_instruction': '换一道同类新题独立完成'}

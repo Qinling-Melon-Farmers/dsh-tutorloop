@@ -137,5 +137,5 @@ def get_attempts(limit=50):
 
 def recent_weakness(profile_id=None):
     return '；'.join(dict.fromkeys(a['result']['next_skill'] for a in get_attempts(5)
-                                 if a['result'].get('next_skill') and a.get('score', 0) < 10
+                                 if a['result'].get('next_skill') and isinstance(a.get('score'), (int, float)) and a['score'] < 10
                                  and (profile_id is None or a.get('learning_profile', {}).get('id', 'gongkao') == profile_id)))

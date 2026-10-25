@@ -2,8 +2,9 @@ import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { resolveRuntime } from '../scripts/runtime.mjs'
+import { STUDENT_ACTIONS, TEACHER_ACTIONS } from './actions.js'
 
-export const ACTIONS = new Set(['overview', 'list_sources', 'start_practice', 'get_context', 'reveal', 'submit_answer', 'apply_feedback', 'export_memoir', 'find_materials', 'create_practice', 'set_profile', 'import_file', 'import_folder', 'search_materials', 'fetch_material', 'method_cards', 'student_state', 'public_state', 'language_settings'])
+export const ACTIONS = new Set([...STUDENT_ACTIONS, ...TEACHER_ACTIONS])
 
 export function createBridge(config = {}) {
   const language = config.language ?? process.env.TUTORLOOP_LANGUAGE ?? 'zh'

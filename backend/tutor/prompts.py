@@ -41,9 +41,10 @@ def question_prompt(topic, difficulty, chunks, weakness="", profile=None):
         mode = "subject依据实际学习主题填写，不套用国考科目；按目标与材料选择short_answer或single_choice。"
     else:
         mode = "subject为行测，question_type必须为single_choice。" if objective else "subject为申论，question_type为short_answer。"
-    mode += "若为single_choice，提供A至D互异options[{id,text}]、唯一correct_option_id及explanation，核对计算或逻辑，rubric可为一个正确选择项10分。"
+    mode += "若为single_choice，提供A至D互异options[{id,text}]、唯一correct_option_id及explanation，核对计算或逻辑，rubric可为一个正确选择项10分。subject和skill依学习档案填写，不省略。英文按词数时明确length_unit=words，其他按characters。student_material_ids只列学生作答必需的客观材料，教师解析和参考答案不公开；material不得夹带参考答案。rubric_status=ready仅用于已明确题目特定要点权重的量表，否则uncalibrated。"
     return checked(f"基于证据出一道AI生成原创练习。主题:{topic}；难度:{difficulty}；弱点:{weakness}。{mode}material提供充分客观材料与编号，不夹带答案；stem明确任务，word_limit为1至1500。reference_answer与rubric供后台保存；1至12个不重复评分项整数合计10，每项引用现有来源ID。hint仅提示方向。stem末尾明确标注‘AI生成练习，非真题，答案与解析需核对’。不得称为官方真题或评分。\n{evidence_text(chunks)}")
 
 
 def grading_prompt(question, answer, chunks):
-    return checked(f"按作答前冻结量表批改，不增删评分项；criteria的name与rubric逐字一致且恰好出现一次。接受语义等价，不因措辞不同扣分。按各项上限评分可用半分。批评指出原句，student_span如填写必须为学生答案子串；evidence_ids仅用现有编号。区分遗漏、无据推断、因果倒置和表达问题，不重复扣分。给符合字数的改进答案，只选一个优先next_skill及对应练习。此为教学反馈非官方分数。\n冻结题目:{json.dumps(question, ensure_ascii=False)}\n学生原文:{answer}\n{evidence_text(chunks)}")
+    calibration = "本题未标定，只给定性反馈；criteria.awarded=null，不输出数值评价，不把占位量表当逐项标准。" if question.get('rubric_status') == 'uncalibrated' else "按作答前冻结量表逐项批改，不增删评分项，criteria.name与rubric恰好一一对应。"
+    return checked(f"{calibration}接受语义等价，不因措辞不同扣分。每项必须提供有效evidence_ids和非空student_span原文子串；不能仅写泛泛评论。已标定时按上限给半分，不伪称官方分数。区分遗漏、无据推断、因果倒置和表达问题，不重复扣分。依length_unit与word_limit控制示范长度，只选一个优先next_skill并安排新情境验证。\n冻结题目:{json.dumps(question, ensure_ascii=False)}\n学生原文:{answer}\n{evidence_text(chunks)}")

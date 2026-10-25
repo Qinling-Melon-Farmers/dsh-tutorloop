@@ -34,16 +34,32 @@ def _rubric(value) -> str:
     return "\n".join(rows)
 
 
-def _convert(question: dict, index: int) -> dict:
+def _profile(record, explicit=None):
+    value = explicit if explicit is not None else record.get('learning_profile', record.get('profile', {}))
+    return value if isinstance(value, dict) else {}
+
+
+def _convert(question: dict, index: int, profile=None) -> dict:
     if not isinstance(question, dict):
         raise ValueError(f"第{index}题必须为对象")
     # Practice records may wrap the original question.
     q = question.get("question", question)
     if not isinstance(q, dict):
         raise ValueError(f"第{index}题缺少有效题目对象")
+    # The generic StudyHub importer cannot preserve structured image blocks.
+    # Reject even inconsistent old flags rather than producing a text-only exam.
+    block_lists = [q.get(field) for field in ('stem_blocks', 'material_blocks', 'reference_blocks')]
+    options = q.get('options') if isinstance(q.get('options'), list) else []
+    materials = question.get('materials') if isinstance(question.get('materials'), list) else []
+    block_lists += [option.get('blocks') for option in options if isinstance(option, dict)]
+    block_lists += [material.get('blocks') for material in materials if isinstance(material, dict)]
+    if q.get('visual_required') or any(isinstance(blocks, list) and any(isinstance(b, dict) and b.get('type') == 'image' for b in blocks) for blocks in block_lists):
+        raise ValueError(f'第{index}题包含必要图像，StudyHub文本导出不支持图文，不能丢弃图片')
     kind = q.get("kind", q.get("question_type", q.get("type", "open")))
     aliases = {"single": "quiz", "single_choice": "quiz", "multiple_choice": "multi", "short_answer": "open", "essay": "open", "shenlun": "open"}
     kind = aliases.get(kind, kind)
+    if kind == 'open' and q.get('rubric_status') == 'uncalibrated':
+        raise ValueError(f'第{index}题量表尚未标定，不能导出为有分项分值的开放题')
     if kind not in {"quiz", "multi", "flashcard", "open", "cloze"}:
         raise ValueError(f"第{index}题题型不受StudyHub支持：{kind}")
     stem = _text(q.get("stem")) or _text(q.get("prompt"))
@@ -57,9 +73,14 @@ def _convert(question: dict, index: int) -> dict:
         raise ValueError(f"第{index}题缺少题干或已核对参考答案，不能自动补造")
     material = _text(q.get("material"))
     limit = q.get("word_limit")
-    card = {"kind": kind, "topic": _text(q.get("topic")) or _text(q.get("skill")) or _text(q.get("subject")) or "国考训练",
+    unit = q.get('length_unit', 'characters')
+    if unit not in ('characters', 'words'):
+        raise ValueError(f'第{index}题的长度计量单位无效')
+    length_label = f'\n词数要求：{limit}词以内' if unit == 'words' else f'\n字数要求：{limit}字以内'
+    selected_profile = _profile(question, profile)
+    card = {"kind": kind, "topic": _text(q.get("topic")) or _text(q.get("skill")) or _text(q.get("subject")) or _text(selected_profile.get('goal')) or _text(selected_profile.get('name')) or "学习练习",
             "objective": _text(q.get("objective")) or f"完成第{index}题并按参考标准复盘",
-            "prompt": (f"材料：\n{material}\n\n" if material else "") + stem + (f"\n字数要求：{limit}字以内" if limit else ""),
+            "prompt": (f"材料：\n{material}\n\n" if material else "") + stem + (length_label if limit else ""),
             "answer": answer,
             "hint": _text(q.get("hint")) or "先识别题目任务，再定位材料依据。",
             "explanation": (_text(q.get("explanation")) or "请结合参考答案、评分要点与材料复盘。") + "\n" + DISCLAIMER,
@@ -118,7 +139,7 @@ def _convert(question: dict, index: int) -> dict:
     return card
 
 
-def export_studyhub_deck(questions: list[dict], title: str) -> dict:
+def export_studyhub_deck(questions: list[dict], title: str, *, profile: dict | None = None) -> dict:
     """Return only fields supported by StudyHub's actual generic JSON importer.
 
     Raises ValueError for missing answers/rubrics instead of fabricating them.
@@ -128,11 +149,17 @@ def export_studyhub_deck(questions: list[dict], title: str) -> dict:
         raise ValueError("请至少选择一道题")
     if not _text(title):
         raise ValueError("题组标题不能为空")
-    return {"title": title.strip(), "course": "国考副省级训练", "folder": "国考训练（非官方）",
-            "cards": [_convert(question, index) for index, question in enumerate(questions, 1)]}
+    cards = [_convert(question, index, profile) for index, question in enumerate(questions, 1)]
+    names = []
+    for record in questions:
+        q = record.get('question', record)
+        selected_profile = _profile(record, profile)
+        names.append(_text(selected_profile.get('name')) or _text(q.get('subject')) or '学习练习')
+    course = names[0] if len(set(names)) == 1 else '学习练习'
+    return {"title": title.strip(), "course": course, "folder": f'{course}（练习草稿）', "cards": cards}
 
 
-def export_sources_markdown(questions: list[dict], title: str = "国考练习来源说明") -> str:
+def export_sources_markdown(questions: list[dict], title: str = "学习练习来源说明") -> str:
     """Provenance sidecar to download beside the deck, not a verified citation."""
     rows = [f"# {title}", "", DISCLAIMER, "",
             "题库JSON应作为草稿导入StudyHub检查；此说明不是已核验引文。请先导入原始资料，再在StudyHub中匹配原文引用。通用JSON不会保存外部ID、作答历史与自定义评分字段。", ""]

@@ -1,356 +1,467 @@
-"""Real-exam (真题) seed bank built from local fenbi solution files.
-
-Data layout inside the workspace (workspace root is derived from the DB path):
-  粉笔试卷/答案解析/{行测|申论}/{真题卷|模考卷}/{name}.解析.json
-  粉笔试卷/题目选项/{paper_id}.json     xingce only: options + per-question material
-  粉笔试卷/真题索引.json                 generated index, rebuilt on demand
-
-seed ids look like ``zhenti:{paper_id}:{question_id}``. Quiz (整卷/组卷)
-progress is persisted through storage settings so a paper can be resumed.
-Reference answers and explanations live only inside the frozen question and
-are stripped by public_exercise before students submit.
-"""
-import html
+"""Workspace-bound real-exam bank, rich content and instance-scoped quizzes."""
 import json
+import os
 import random
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-
+from uuid import uuid4
 from . import storage as db
+from .rich_content import html_to_blocks, blocks_text, analyze_blocks
 
 _INDEX_NAME = '真题索引.json'
 _SOLUTION_DIR = '答案解析'
 _OPTIONS_DIR = '题目选项'
 _CHOICE_LETTERS = 'ABCDEFGH'
 _QUIZ_KEY = 'zhenti_quiz_active'
+_MAX_JSON_BYTES = 32 * 1024 * 1024
 
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def workspace_root() -> Path:
-    return db.DB_PATH.parent.parent
+def workspace_root():
+    configured = os.environ.get('TUTOR_WORKSPACE_PATH', '').strip()
+    root = Path(configured).expanduser() if configured else db.DB_PATH.parent.parent
+    return root.resolve()
 
 
-def _html_text(value) -> str:
-    if not value:
-        return ''
-    text = re.sub(r'<br\s*/?>|</p>|</div>|</li>', '\n', str(value))
-    text = re.sub(r'<[^>]+>', '', text)
-    text = html.unescape(text)
-    return re.sub(r'\n{3,}', '\n\n', text).strip()
+def _component(value):
+    if not isinstance(value, str):
+        raise ValueError('题库路径字段必须为文本。')
+    if not value or value in {'.', '..'} or len(value) > 240 or any(c in value for c in '/\\:\x00'):
+        raise ValueError('题库路径字段无效。')
+    return value
 
 
-def _index_path() -> Path:
-    return workspace_root() / '粉笔试卷' / _INDEX_NAME
+def _id(value):
+    value = str(value)
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', value) or value == 'None':
+        raise ValueError('题库编号无效。')
+    return value
 
 
-def _solution_path(subject: str, kind: str, name: str) -> Path:
-    return workspace_root() / '粉笔试卷' / _SOLUTION_DIR / subject / kind / f'{name}.解析.json'
+def _contained(path):
+    root = workspace_root()
+    path = Path(path).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError('题库文件不能指向工作区外。')
+    return path
 
 
-def _options_path(paper_id) -> Path:
-    return workspace_root() / '粉笔试卷' / _OPTIONS_DIR / f'{paper_id}.json'
+def _read_json(path):
+    path = _contained(path)
+    with path.open('rb') as stream:
+        raw = stream.read(_MAX_JSON_BYTES + 1)
+    if len(raw) > _MAX_JSON_BYTES:
+        raise ValueError('题库JSON超过32MB限制。')
+    data = json.loads(raw.decode('utf-8-sig'))
+    if not isinstance(data, dict):
+        raise ValueError('题库JSON必须为对象。')
+    return data
 
 
-def _year_of(name: str) -> int:
+def _index_path():
+    return _contained(workspace_root() / '粉笔试卷' / _INDEX_NAME)
+
+
+def _solution_path(subject, kind, name):
+    return _contained(workspace_root() / '粉笔试卷' / _SOLUTION_DIR / _component(subject) / _component(kind) / (_component(name) + '.解析.json'))
+
+
+def _options_path(paper_id):
+    return _contained(workspace_root() / '粉笔试卷' / _OPTIONS_DIR / (_id(paper_id) + '.json'))
+
+
+def _html_text(value):
+    return blocks_text(html_to_blocks(value))
+
+
+def _year_of(name):
     match = re.search(r'(20\d\d)', name)
     return int(match.group(1)) if match else 0
 
 
-def _skill_of(solution: dict, no: int, subject: str) -> str:
-    points = ((solution.get('solutions') or [])[no - 1].get('keypoints')) if no <= len(solution.get('solutions') or []) else None
-    if points:
-        return str(points[0].get('name') or '').strip()[:30] or (f'{subject}综合')
-    return f'{subject}综合'
+def _skill_of(solution, no, subject):
+    items = solution.get('solutions') or []
+    points = items[no - 1].get('keypoints') if 0 < no <= len(items) else None
+    return str(points[0].get('name') or '').strip()[:100] if points else f'{subject}综合'
 
 
-def _word_limit_of(stem: str, default: int = 250) -> int:
+def _word_limit_of(stem, default=250):
     match = re.search(r'不超过\s*(\d+)\s*字', stem)
     if match:
         return max(1, min(1500, int(match.group(1))))
     match = re.search(r'(\d+)\s*[-~～]\s*(\d+)\s*字', stem)
-    if match:
-        return max(1, min(1500, int(match.group(2))))
-    return default
+    return max(1, min(1500, int(match.group(2)))) if match else default
 
 
-def _quiz_materials(solution: dict, indexes) -> list[dict]:
-    """Materials referenced by a shenlun question (by materialIndexes id)."""
-    texts = []
+def _reference_blocks(item):
+    blocks = []
+    for accessory in item.get('solutionAccessories') or []:
+        if accessory.get('label') == 'reference':
+            blocks.extend(html_to_blocks(accessory.get('content')))
+    return blocks
+
+
+def _reference_answer(item):
+    return blocks_text(_reference_blocks(item))
+
+
+def _quiz_materials(solution, indexes):
+    materials = []
+    wanted = {str(value) for value in indexes} if indexes else None
+    available = {str(m.get('id')) for m in solution.get('materials') or []}
+    if wanted is not None and not wanted.issubset(available):
+        raise ValueError('题目所引用的部分材料缺失。')
     for material in solution.get('materials') or []:
-        if indexes and material.get('id') not in indexes:
+        if wanted is not None and str(material.get('id')) not in wanted:
             continue
-        content = _html_text(material.get('content'))
-        if content:
-            texts.append({'title': f"给定资料（材料ID {material.get('id')}）", 'text': content})
-    if not texts and indexes is None:
-        for material in solution.get('materials') or []:
-            content = _html_text(material.get('content'))
-            if content:
-                texts.append({'title': f"给定资料（材料ID {material.get('id')}）", 'text': content})
-    return texts
+        blocks = html_to_blocks(material.get('content'))
+        if blocks:
+            materials.append({'title': f"给定资料（材料ID {material.get('id')}）", 'text': blocks_text(blocks), 'blocks': blocks})
+    return materials
 
 
-def build_index(force: bool = False) -> dict:
-    """Scan solution (and options) files into the light index file."""
+def _options_map(paper_id):
+    path = _options_path(paper_id)
+    if not path.exists():
+        return {}
+    data = _read_json(path)
+    return {_id(q.get('id')): q for q in data.get('questions') or [] if isinstance(q, dict)}
+
+
+def _choice(item, opts):
+    answer = (item.get('correctAnswer') or {}).get('choice')
+    if answer is None:
+        return None
+    answer = str(answer)
+    # A multi-answer key cannot silently become the first single-choice answer.
+    if not re.fullmatch(r'\d+', answer) or not 2 <= len(opts) <= len(_CHOICE_LETTERS):
+        return None
+    number = int(answer)
+    return _CHOICE_LETTERS[number] if 0 <= number < len(opts) else None
+
+
+def _ready(item, option):
+    if (item.get('correctAnswer') or {}).get('choice') is not None:
+        opts = option.get('options') or []
+        if not isinstance(opts, list):
+            return False
+        return _choice(item, opts) is not None and all(bool(html_to_blocks(t)) for t in opts)
+    return bool(_reference_blocks(item))
+
+
+def _validate_index(data):
+    if not isinstance(data.get('papers'), list):
+        raise ValueError('题库索引格式无效。')
+    for paper in data['papers']:
+        _id(paper.get('paper_id'))
+        for key in ('subject', 'kind', 'name'):
+            _component(paper.get(key, ''))
+        if not isinstance(paper.get('questions'), list):
+            raise ValueError('题目索引格式无效。')
+        for entry in paper['questions']:
+            qid = _id(entry.get('qid'))
+            if entry.get('seed') != f"zhenti:{paper['paper_id']}:{qid}":
+                raise ValueError('题目索引编号不一致。')
+    return data
+
+
+def build_index(force=False):
     path = _index_path()
     if path.exists() and not force:
-        try:
-            return json.loads(path.read_text(encoding='utf-8'))
-        except Exception:
-            pass
-    papers = []
-    root = workspace_root() / '粉笔试卷' / _SOLUTION_DIR
+        return _validate_index(_read_json(path))
+    root = _contained(workspace_root() / '粉笔试卷' / _SOLUTION_DIR)
+    papers, errors = [], []
     if not root.exists():
-        return {'papers': papers}
-    for file in root.rglob('*.解析.json'):
+        return {'papers': papers, 'errors': errors}
+    for file in sorted(root.rglob('*.解析.json')):
         try:
-            data = json.loads(file.read_text(encoding='utf-8'))
-        except Exception:
-            continue
-        solutions = data.get('solutions') or []
-        if not solutions:
-            continue
-        subject, kind = file.relative_to(root).parts[0], file.relative_to(root).parts[1]
-        paper_id = data.get('paper_id')
-        options_file = _options_path(paper_id)
-        options_map = {}
-        if options_file.exists():
-            try:
-                for q in json.loads(options_file.read_text(encoding='utf-8')).get('questions') or []:
-                    options_map[str(q.get('id'))] = q
-            except Exception:
-                options_map = {}
-        questions = []
-        for no, item in enumerate(solutions, start=1):
-            qid = str(item.get('id'))
-            options = options_map.get(qid) or {}
-            opts = options.get('options') or []
-            choice = ((item.get('correctAnswer') or {}).get('choice'))
-            single = choice is not None
-            ok = bool(single and len(opts) >= 2) or (not single and bool(_reference_answer(item)))
-            questions.append({'no': no, 'qid': qid, 'seed': f'zhenti:{paper_id}:{qid}',
-                              't': 'single' if single else 'short',
-                              'skill': _skill_of(data, no, subject),
-                              'ok': ok})
-        papers.append({'paper_id': paper_id, 'name': data.get('name') or file.stem,
-                       'subject': subject, 'kind': kind, 'year': _year_of(data.get('name') or ''),
-                       'count': len(questions), 'questions': questions})
+            file = _contained(file)
+            parts = file.relative_to(root).parts
+            if len(parts) != 3:
+                continue
+            subject, kind = map(_component, parts[:2])
+            data = _read_json(file)
+            solutions = data.get('solutions') or []
+            if not solutions:
+                continue
+            paper_id = _id(data.get('paper_id'))
+            name = _component(data.get('name') or file.name[:-len('.解析.json')])
+            # Index identity must point back to the scanned file, never a JSON-supplied path.
+            if _solution_path(subject, kind, name) != file:
+                raise ValueError('试卷名称与文件名不一致。')
+            options = _options_map(paper_id)
+            questions = []
+            for no, item in enumerate(solutions, 1):
+                qid = _id(item.get('id'))
+                questions.append({'no': no, 'qid': qid, 'seed': f'zhenti:{paper_id}:{qid}',
+                                  't': 'single' if (item.get('correctAnswer') or {}).get('choice') is not None else 'short',
+                                  'skill': _skill_of(data, no, subject), 'ok': _ready(item, options.get(qid) or {})})
+            papers.append({'paper_id': data['paper_id'], 'name': name, 'subject': subject,
+                           'kind': kind, 'year': _year_of(name), 'count': len(questions), 'questions': questions})
+        except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+            errors.append({'file': file.name, 'error': str(exc)[:300]})
     papers.sort(key=lambda p: (p['subject'], p['kind'] != '真题卷', -p['year'], p['name']))
-    index = {'papers': papers, 'rebuilt_at': _now()}
+    result = {'papers': papers, 'rebuilt_at': _now(), 'errors': errors}
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(index, ensure_ascii=False), encoding='utf-8')
-    return index
+    temporary = path.with_name(path.name + '.' + uuid4().hex + '.tmp')
+    try:
+        temporary.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return result
 
 
-def _reference_answer(solution_item: dict) -> str:
-    for accessory in solution_item.get('solutionAccessories') or []:
-        if accessory.get('label') == 'reference':
-            return _html_text(accessory.get('content'))
-    return ''
-
-
-def papers() -> dict:
-    index = build_index()
-    skills = {}
-    for paper in index.get('papers') or []:
+def papers():
+    skills, listing = {}, []
+    for paper in build_index().get('papers') or []:
         bucket = skills.setdefault(paper['subject'], {})
-        for q in paper.get('questions') or []:
-            bucket[q['skill']] = bucket.get(q['skill'], 0) + 1
-    listing = [{'paper_id': p['paper_id'], 'name': p['name'], 'subject': p['subject'],
-                'kind': p['kind'], 'year': p['year'], 'count': p['count']} for p in index.get('papers') or []]
-    ranked = {s: [k for k, _ in sorted(b.items(), key=lambda kv: -kv[1])]
-              for s, b in skills.items()}
-    return {'papers': listing, 'skills': ranked}
+        ready = [q for q in paper['questions'] if q.get('ok') is True]
+        for question in ready:
+            bucket[question['skill']] = bucket.get(question['skill'], 0) + 1
+        listing.append({key: paper[key] for key in ('paper_id', 'name', 'subject', 'kind', 'year', 'count')} | {'ready_count': len(ready)})
+    return {'papers': listing, 'skills': {subject: [skill for skill, _ in sorted(bucket.items(), key=lambda p: -p[1])] for subject, bucket in skills.items()}}
 
 
-def paper_detail(paper_id) -> dict:
-    index = build_index()
-    for paper in index.get('papers') or []:
-        if str(paper['paper_id']) == str(paper_id):
-            return {'paper_id': paper['paper_id'], 'name': paper['name'], 'subject': paper['subject'],
-                    'kind': paper['kind'], 'year': paper['year'], 'questions': paper['questions']}
+def paper_detail(paper_id):
+    paper_id = _id(paper_id)
+    for paper in build_index().get('papers') or []:
+        if str(paper['paper_id']) == paper_id:
+            return {key: paper[key] for key in ('paper_id', 'name', 'subject', 'kind', 'year', 'questions')}
     raise ValueError('未找到这套试卷，请重新生成真题索引。')
 
 
-def _load_paper(paper) -> tuple[dict, dict]:
-    file = _solution_path(paper['subject'], paper['kind'], paper['name'])
-    if not file.exists():
-        raise ValueError('找不到这套卷的解析文件。')
-    solution = json.loads(file.read_text(encoding='utf-8'))
-    options_file = _options_path(paper['paper_id'])
-    options_map = {}
-    if options_file.exists():
-        for q in json.loads(options_file.read_text(encoding='utf-8')).get('questions') or []:
-            options_map[str(q.get('id'))] = q
-    return solution, options_map
+def _load_paper(paper):
+    data = _read_json(_solution_path(paper['subject'], paper['kind'], paper['name']))
+    if str(data.get('paper_id')) != str(paper['paper_id']):
+        raise ValueError('试卷文件与索引编号不一致。')
+    return data, _options_map(paper['paper_id'])
 
 
-def build_seed(seed_id: str) -> tuple[dict, list[dict]]:
-    """Return (question, sources) for a zhenti seed id, aligned with _question checks."""
-    parts = seed_id.split(':')
+def _source(sid, title, locator, blocks):
+    visual = analyze_blocks(blocks)
+    return {'id': sid, 'title': title, 'locator': locator, 'url': '', 'kind': 'zhenti_material',
+            'content_role': 'student_material', 'text': blocks_text(blocks), **visual}
+
+
+def build_seed(seed_id):
+    parts = seed_id.split(':') if isinstance(seed_id, str) else []
     if len(parts) != 3 or parts[0] != 'zhenti':
         raise ValueError('真题编号格式不正确。')
-    paper_id, qid = parts[1], parts[2]
+    paper_id, qid = map(_id, parts[1:])
     detail = paper_detail(paper_id)
-    entry = next((q for q in detail['questions'] if q['qid'] == qid), None)
+    entry = next((q for q in detail['questions'] if str(q['qid']) == qid), None)
     if entry is None:
         raise ValueError('未找到这道真题。')
     solution, options_map = _load_paper(detail)
-    item = next((s for s in solution['solutions'] if str(s['id']) == qid), None)
+    item = next((q for q in solution.get('solutions') or [] if str(q.get('id')) == qid), None)
     if item is None:
-        raise ValueError('未找到这道真题的内容。')
-    stem = _html_text(item.get('content'))
+        raise ValueError('未找到这道题的内容。')
+    option = options_map.get(qid) or {}
+    if not _ready(item, option):
+        raise ValueError('这道题缺少有效选项或参考答案，暂不能练习。')
+    stem_blocks = html_to_blocks(item.get('content'))
+    stem = blocks_text(stem_blocks) or '请根据图像作答。'
     explanation = _html_text(item.get('solution'))
-    skill = entry['skill']
-    if entry['t'] == 'single':
-        opt_data = options_map.get(qid) or {}
-        opts = [o for o in opt_data.get('options') or []]
-        if len(opts) < 2:
-            raise ValueError('这道题缺少选项，暂不能练习。')
-        choice = str((item.get('correctAnswer') or {}).get('choice')).split(',')[0]
-        correct = _CHOICE_LETTERS[int(choice)] if choice.isdigit() and int(choice) < len(opts) else None
-        if correct is None:
-            raise ValueError('这道题缺少标准答案，暂不能练习。')
-        material = opt_data.get('material') or {}
-        material_text = _html_text(material.get('content'))
-        source = {'id': 'P1', 'title': f"{detail['name']}·第{entry['no']}题材料" if material_text else f"{detail['name']}·题干",
-                  'locator': f'第{entry["no"]}题', 'url': '', 'kind': 'zhenti_material',
-                  'text': material_text or (stem + '\n' + '\n'.join(f'{_CHOICE_LETTERS[i]}. {t}' for i, t in enumerate(opts)))}
-        question = {'id': seed_id, 'subject': detail['subject'], 'skill': skill,
-                    'question_type': 'single_choice',
-                    'options': [{'id': _CHOICE_LETTERS[i], 'text': str(t)} for i, t in enumerate(opts)],
-                    'correct_option_id': correct, 'explanation': explanation, 'difficulty': '提高',
-                    'material': f"[P1] {source['text'][:2000]}", 'stem': stem, 'word_limit': 150,
-                    'reference_answer': f'{correct}。{explanation[:400]}',
-                    'rubric': [{'name': '正确选择', 'requirement': f'选择{correct}', 'points': 10, 'evidence_ids': ['P1']}],
-                    'hint': f'本题考查：{skill}。先排除与题干条件直接矛盾的选项。'}
-        return question, [source]
-    # subjective (shenlun)
-    indexes = None
-    for accessory in item.get('accessories') or []:
-        if accessory.get('materialIndexes'):
-            indexes = set(accessory['materialIndexes'])
-            break
-    materials = _quiz_materials(solution, indexes)
-    sources = [{'id': f'P{i + 1}', 'title': m['title'] or f'材料{i + 1}', 'locator': f'材料{i + 1}',
-                'url': '', 'kind': 'zhenti_material', 'text': m['text']} for i, m in enumerate(materials)]
-    if not sources:
-        sources = [{'id': 'P1', 'title': f'{detail["name"]}·题干', 'locator': f'第{entry["no"]}题',
-                    'url': '', 'kind': 'zhenti_material', 'text': stem}]
-    reference = _reference_answer(item) or (explanation or '参考答案缺失，由导师按材料批改。')
-    question = {'id': seed_id, 'subject': detail['subject'], 'skill': skill,
-                'question_type': 'short_answer', 'options': [], 'correct_option_id': None,
-                'explanation': explanation, 'difficulty': '提高',
-                'material': f"[P1] {sources[0]['text'][:2000]}", 'stem': stem,
-                'word_limit': _word_limit_of(stem), 'reference_answer': reference[:4000],
-                'rubric': [{'name': '申论作答', 'requirement': '按参考答案要点逐条对照：覆盖度、准确性、条理与字数',
-                            'points': 10, 'evidence_ids': [s['id'] for s in sources][:4]}],
-                'hint': '先定位材料中与问法直接相关的句子，再分条概括，不引入材料外推断。'}
+    base = {'id': seed_id, 'subject': detail['subject'], 'skill': entry['skill'], 'difficulty': '提高',
+            'stem': stem, 'stem_blocks': stem_blocks, 'explanation': explanation,
+            'hint': f"本题考查：{entry['skill']}。先定位材料与题干条件。"}
+    if (item.get('correctAnswer') or {}).get('choice') is not None:
+        options = []
+        for i, value in enumerate(option.get('options') or []):
+            blocks = html_to_blocks(value)
+            options.append({'id': _CHOICE_LETTERS[i], 'text': blocks_text(blocks), 'blocks': blocks})
+        material_blocks = html_to_blocks((option.get('material') or {}).get('content'))
+        if material_blocks:
+            source = _source('P1', f"{detail['name']}·第{entry['no']}题材料", f"第{entry['no']}题", material_blocks)
+        else:
+            source = _source('P1', f"{detail['name']}·题干", f"第{entry['no']}题", stem_blocks)
+        sources = [source]
+        correct = _choice(item, option['options'])
+        question = {**base, 'question_type': 'single_choice', 'options': options,
+                    'correct_option_id': correct, 'word_limit': 150, 'rubric_status': 'ready',
+                    'reference_answer': f'{correct}。{explanation}',
+                    'rubric': [{'name': '正确选择', 'requirement': f'选择{correct}', 'points': 10, 'evidence_ids': ['P1']}]}
+    else:
+        indexes = next((a['materialIndexes'] for a in item.get('accessories') or [] if a.get('materialIndexes')), None)
+        materials = _quiz_materials(solution, indexes)
+        if indexes and not materials:
+            raise ValueError('题目所引用材料缺失，不能以题干替代。')
+        sources = [_source(f'P{i+1}', m['title'], f'材料{i+1}', m['blocks']) for i, m in enumerate(materials)]
+        if not sources:
+            raise ValueError('申论缺少给定资料，暂不能练习。')
+        question = {**base, 'question_type': 'short_answer', 'options': [], 'correct_option_id': None,
+                    'word_limit': _word_limit_of(stem), 'reference_answer': _reference_answer(item) or '参考答案含图像，需教师查看参考图像后核对。',
+                    'reference_blocks': _reference_blocks(item), 'rubric_status': 'uncalibrated',
+                    'rubric': [{'name': '待标定', 'requirement': '量表尚未确认，仅给定性反馈，不提供精确评分。',
+                                'points': 10, 'evidence_ids': [s['id'] for s in sources]}]}
+    material_blocks = []
+    for source in sources:
+        material_blocks.extend(source['blocks'])
+    all_blocks = stem_blocks + material_blocks + [block for opt in question['options'] for block in opt['blocks']]
+    visuals = analyze_blocks(all_blocks)
+    question.update(material='\n\n'.join(f"[{s['id']}] {s['text']}" for s in sources),
+                    material_blocks=material_blocks, student_material_ids=[s['id'] for s in sources],
+                    visual_required=visuals['visual_required'], visual_supported=visuals['visual_supported'])
     return question, sources
 
 
-def is_zhenti(seed_id: str) -> bool:
+def is_zhenti(seed_id):
     return isinstance(seed_id, str) and seed_id.startswith('zhenti:')
 
 
-# ---------- quiz (整卷 / 组卷) ----------
+def _quiz():
+    quiz = db.get_value(_QUIZ_KEY)
+    if (not isinstance(quiz, dict) or quiz.get('schema_version') != 2
+            or not isinstance(quiz.get('exercise_ids'), list) or not isinstance(quiz.get('items'), list)
+            or not quiz['items'] or len(quiz['items']) != len(quiz['exercise_ids'])
+            or type(quiz.get('index')) is not int or not 0 <= quiz['index'] <= len(quiz['items'])
+            or quiz.get('mode') not in ('coach', 'exam')):
+        return None
+    return quiz
 
-def _quiz() -> dict | None:
-    return db.get_value(_QUIZ_KEY) or None
 
-
-def start_quiz(paper_id=None, subject=None, skill=None, count=10, shuffle=False) -> dict:
+def start_quiz(paper_id=None, subject=None, skill=None, count=10, shuffle=False, mode='coach'):
+    if mode not in ('coach', 'exam'):
+        raise ValueError('未知练习模式。')
     if paper_id is not None:
         detail = paper_detail(paper_id)
-        items = [q['seed'] for q in detail['questions'] if q['ok']]
+        items = [q['seed'] for q in detail['questions'] if q.get('ok') is True]
         title = f"整卷 · {detail['name']}"
     else:
-        index = build_index()
-        pool = []
-        for paper in index.get('papers') or []:
-            if subject and paper['subject'] != subject:
-                continue
-            for q in paper.get('questions') or []:
-                if q['ok'] and skill and q['skill'] != skill:
-                    continue
-                pool.append(q['seed'])
-        if not pool:
-            raise ValueError('没有符合条件的题目，请调整科目或考点。')
-        count = max(1, min(int(count or 10), 50, len(pool)))
-        items = random.sample(pool, count)
-        title = f'组卷 · {subject or "全部"}{("·" + skill) if skill else ""} · {count}题'
+        pool = [q['seed'] for p in build_index().get('papers') or [] if not subject or p['subject'] == subject
+                for q in p['questions'] if q.get('ok') is True and (not skill or q['skill'] == skill)]
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 50:
+            raise ValueError('组卷数量须为1至50。')
+        items = random.sample(pool, min(count, len(pool)))
+        title = f'组卷 · {subject or "全部"}{("·" + skill) if skill else ""} · {len(items)}题'
+    if not items:
+        raise ValueError('没有符合条件的可用题目。')
     if shuffle:
         random.shuffle(items)
-    quiz = {'quiz_id': f'quiz-{int(datetime.now().timestamp())}', 'title': title,
-            'items': items, 'index': 0, 'started_at': _now()}
-    db.set_value(_QUIZ_KEY, quiz)
-    return state()
+    # Preparation is side-effect-free: the controller must create the first
+    # exercise successfully before activation. Later seeds revalidate on load.
+    build_seed(items[0])
+    return {'schema_version': 2, 'quiz_id': 'quiz-' + uuid4().hex, 'title': title,
+            'items': items, 'exercise_ids': [None] * len(items), 'index': 0,
+            'mode': mode, 'started_at': _now(), 'current_seed': items[0], 'finished': False}
 
 
-def state() -> dict:
+def activate_quiz(plan, exercise_id, con=None):
+    if con is None:
+        with db.connect() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            activate_quiz(plan, exercise_id, con=connection)
+        return state()
+    if not isinstance(plan, dict) or plan.get('schema_version') != 2 or plan.get('index') != 0:
+        raise ValueError('无效的整卷准备状态。')
+    quiz = {key: plan[key] for key in ('schema_version', 'quiz_id', 'title', 'items', 'exercise_ids', 'index', 'mode', 'started_at')}
+    _check_exercise(quiz, 0, exercise_id, con)
+    quiz['exercise_ids'][0] = exercise_id
+    db.set_value(_QUIZ_KEY, quiz, con)
+    return None
+
+
+def _check_exercise(quiz, index, exercise_id, con):
+    row = con.execute('SELECT seed_id,mode FROM exercises WHERE id=?', (exercise_id,)).fetchone()
+    if not row or row['seed_id'] != quiz['items'][index] or row['mode'] != quiz['mode']:
+        raise ValueError('本轮练习实例与题目或模式不一致。')
+
+
+def state():
     quiz = _quiz()
     if not quiz:
-        return {'active': False}
-    return {'active': True, 'quiz_id': quiz['quiz_id'], 'title': quiz['title'],
-            'total': len(quiz['items']), 'index': quiz['index'],
-            'current_seed': quiz['items'][quiz['index']] if quiz['index'] < len(quiz['items']) else None,
-            'finished': quiz['index'] >= len(quiz['items'])}
+        return {'active': False, 'invalidated': bool(db.get_value(_QUIZ_KEY)), 'note': '旧整卷记录无可靠轮次归属时请重新开卷。'}
+    finished = quiz['index'] >= len(quiz['items'])
+    return {'active': True, 'quiz_id': quiz['quiz_id'], 'title': quiz['title'], 'mode': quiz['mode'],
+            'total': len(quiz['items']), 'index': quiz['index'], 'finished': finished,
+            'current_seed': None if finished else quiz['items'][quiz['index']],
+            'current_exercise_id': None if finished else quiz['exercise_ids'][quiz['index']]}
 
 
-def advance() -> dict:
+def quiz_current_exercise_id():
+    return state().get('current_exercise_id')
+
+
+def next_quiz_plan():
     quiz = _quiz()
     if not quiz:
-        raise ValueError('没有进行中的整卷或组卷。')
-    if quiz['index'] + 1 >= len(quiz['items']):
-        quiz['index'] = len(quiz['items'])
-        db.set_value(_QUIZ_KEY, quiz)
-        return {**state(), 'finished': True, 'report': report()}
-    quiz['index'] += 1
-    db.set_value(_QUIZ_KEY, quiz)
-    return state()
+        raise ValueError('没有可继续的本轮整卷，请重新开卷。')
+    index = min(quiz['index'] + 1, len(quiz['items']))
+    return {'quiz_id': quiz['quiz_id'], 'index': index, 'mode': quiz['mode'],
+            'current_seed': quiz['items'][index] if index < len(quiz['items']) else None,
+            'finished': index >= len(quiz['items'])}
 
 
-def quit_quiz() -> dict:
+def commit_quiz_step(quiz_id, index, exercise_id=None, con=None):
+    if con is None:
+        with db.connect() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            commit_quiz_step(quiz_id, index, exercise_id, con=connection)
+        result = state()
+        return {**result, 'report': report()} if result['finished'] else result
+    saved = con.execute('SELECT value FROM settings WHERE key=?', (_QUIZ_KEY,)).fetchone()
+    quiz = json.loads(saved['value']) if saved else None
+    if not isinstance(quiz, dict) or quiz.get('schema_version') != 2 or quiz.get('quiz_id') != quiz_id:
+        raise ValueError('整卷已切换，请刷新。')
+    expected = min(quiz['index'] + 1, len(quiz['items']))
+    if index != expected:
+        raise ValueError('整卷进度已变化，请刷新。')
+    if index < len(quiz['items']):
+        _check_exercise(quiz, index, exercise_id, con)
+        quiz['exercise_ids'][index] = exercise_id
+    elif exercise_id is not None:
+        raise ValueError('已完成整卷不能绑定额外练习。')
+    quiz['index'] = index
+    db.set_value(_QUIZ_KEY, quiz, con)
+    return None
+
+
+def advance():
+    raise ValueError('整卷推进须由教学控制器绑定本轮练习实例。')
+
+
+def quit_quiz():
     db.set_value(_QUIZ_KEY, None)
     return {'active': False}
 
 
-def report() -> dict:
+def report():
     quiz = _quiz()
     if not quiz:
-        raise ValueError('没有进行中的整卷或组卷。')
-    rows = []
-    correct = graded = pending = 0
+        raise ValueError('没有可报告的本轮整卷，请重新开卷。')
+    rows, correct, scored, pending, answered, qualitative = [], 0, 0, 0, 0, 0
     with db.connect() as con:
-        for position, seed in enumerate(quiz['items'], start=1):
-            row = con.execute(
-                'SELECT e.id, a.status, a.answer, a.feedback FROM exercises e '
-                "JOIN tutor_attempts a ON a.exercise_id = e.id AND a.status = 'graded' "
-                'WHERE e.seed_id = ? ORDER BY a.created_at DESC LIMIT 1', (seed,)).fetchone()
-            meta = con.execute('SELECT topic FROM exercises WHERE seed_id = ? LIMIT 1', (seed,)).fetchone()
-            entry = {'no': position, 'seed': seed, 'skill': meta['topic'] if meta else '',
-                     'status': row['status'] if row else 'unanswered', 'answer': row['answer'] if row else None}
+        for no, (seed, exercise_id) in enumerate(zip(quiz['items'], quiz['exercise_ids']), 1):
+            row = con.execute('SELECT id,status,answer,feedback FROM tutor_attempts WHERE exercise_id=? ORDER BY revision DESC,created_at DESC LIMIT 1', (exercise_id,)).fetchone() if exercise_id else None
+            meta = con.execute('SELECT topic FROM exercises WHERE id=?', (exercise_id,)).fetchone() if exercise_id else None
+            entry = {'no': no, 'seed': seed, 'exercise_id': exercise_id, 'skill': meta['topic'] if meta else '',
+                     'attempt_id': row['id'] if row else None,
+                     'status': row['status'] if row else 'unanswered', 'answer': row['answer'] if row else None,
+                     'grading_status': 'pending' if row and row['status'] == 'pending' else 'unanswered'}
             if row:
-                graded += 1
+                answered += 1
+            if row and row['status'] != 'pending':
                 feedback = json.loads(row['feedback'] or '{}')
                 score = feedback.get('score')
-                entry['score'] = score
-                if (row['status'] == 'graded' and score is not None and score >= 8
-                        and not feedback.get('over_word_limit')):
-                    correct += 1
-            else:
-                pending_row = con.execute(
-                    'SELECT 1 FROM exercises e JOIN tutor_attempts a ON a.exercise_id = e.id '
-                    "AND a.status = 'pending' WHERE e.seed_id = ? LIMIT 1", (seed,)).fetchone()
-                if pending_row:
-                    entry['status'] = 'pending'
-                    pending += 1
+                if isinstance(score, (int, float)) and not isinstance(score, bool):
+                    scored += 1
+                    entry['score'] = score
+                    entry['grading_status'] = 'scored'
+                    if score >= 8 and not feedback.get('over_word_limit'):
+                        correct += 1
+                else:
+                    entry['status'] = 'qualitative'
+                    entry['grading_status'] = 'qualitative'
+                    qualitative += 1
+            elif row and row['status'] == 'pending':
+                pending += 1
             rows.append(entry)
-    total_done = graded
-    return {'quiz_id': quiz['quiz_id'], 'title': quiz['title'], 'total': len(quiz['items']),
-            'answered': total_done, 'correct': correct, 'pending': pending,
-            'accuracy': round(correct / total_done, 3) if total_done else None, 'items': rows}
+    return {'quiz_id': quiz['quiz_id'], 'title': quiz['title'], 'total': len(rows),
+            'answered': answered, 'scored': scored, 'graded': scored, 'qualitative': qualitative,
+            'correct': correct, 'pending': pending,
+            'accuracy': round(correct / scored, 3) if scored else None, 'items': rows}

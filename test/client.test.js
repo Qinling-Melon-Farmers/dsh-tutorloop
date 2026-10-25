@@ -29,9 +29,10 @@ test('student API carries cwd, unwraps data and forbids teacher actions', async 
   } finally { globalThis.fetch = original }
 })
 
-test('native view mounts with session scope, student records, forms and disposes cleanly', async () => {
+test('native view mounts with session scope, student records, forms and disposes cleanly', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
   const dir = await mkdtemp(join(repo, 'test', '.client-'))
-  const dom = new JSDOM('<!doctype html><html lang="en"><head></head><body><main id="root"></main></body></html>', { url: 'http://localhost/' })
+  const dom = new JSDOM('<!doctype html><html lang="en"><head></head><body><main id="root"></main></body></html>', { url: 'http://localhost/', pretendToBeVisual: true })
   const old = Object.fromEntries(['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT', 'fetch'].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
   Object.defineProperties(globalThis, {
     window: { configurable: true, value: dom.window }, document: { configurable: true, value: dom.window.document },
@@ -46,7 +47,7 @@ test('native view mounts with session scope, student records, forms and disposes
   let quizState = { active: false }
   let opened = ''
   let savedLanguage = { language: 'zh', resolved_language: 'zh' }
-  const profile = { id: 'generic', name: '英语阅读', goal: '读懂短文', daily_minutes: 30, baseline: '未诊断' }
+  const profile = { id: 'generic', name: '英语阅读', goal: '读懂短文', daily_minutes: 30, baseline: '未诊断', subjects: ['英语'] }
   const exercise = { id: 'ex1', version: 0, mode: 'coach', question: { skill: '时态', subject: '英语', question_type: 'short_answer', material: '[P1] I have lived here for years.', stem: '解释时态作用', word_limit: 80 },
     materials: [{ id: 'P1', title: '公开英语资料', locator: 'P1', url: '', text: 'I have lived here for years, and I still remember the old harbour.' }] }
   const answer = '从过去持续到现在'
@@ -55,7 +56,7 @@ test('native view mounts with session scope, student records, forms and disposes
     let data
     switch (request.action) {
       case 'language_settings': if (request.payload.language) savedLanguage = { ...request.payload }; data = savedLanguage; break
-      case 'overview': data = { learning_profile: profile, sources: 1, attempts: currentAttempts.length, current_exercise: currentExercise, seed_choices: [{ id: 'seed1', subject: '英语', skill: '时态' }], due: [] }; break
+      case 'overview': data = { learning_profile: profile, sources: 1, attempts: currentAttempts.length, pending: 5, current_exercise: currentExercise, seed_choices: [{ id: 'seed1', subject: '英语', skill: '时态' }, { id: 'unrelated-exam', subject: '行测', skill: '增长率' }], due: [] }; break
       case 'student_state': data = { learning_profile: profile, exercise: currentExercise, attempts: currentAttempts }; break
       case 'list_sources': data = { items: [{ id: 'P1', title: '公开英语资料', kind: 'web_snippet_only', locator: '摘要' }] }; break
       case 'method_cards': data = { cards: [{ id: 'card1', title: '先看关系', subject: '教学整理', steps: ['先做一个判断'], example: '一条例子', pitfall: '避免泛化', next_action: '换句验证', source_note: '不是官方标准' }] }; break
@@ -93,6 +94,7 @@ test('native view mounts with session scope, student records, forms and disposes
     await flush(() => root.render(render({ sessionId: 'session1', useSessions: selector => selector({ byId: { session1: { cwd } } }), viewRequest: { view: 'tutorloop' }, completeViewRequest: () => acknowledged++, openView: name => { opened = name } })))
     assert.equal(acknowledged, 1)
     assert.match(document.body.textContent, /英语阅读/)
+    assert.equal(document.querySelector('option[value="unrelated-exam"]'), null)
     assert.match(document.body.textContent, /刷新记录/)
     assert.equal(document.querySelector('select[aria-label="Language / 语言"]').value, 'zh')
     assert.ok(requests.every(request => request.cwd === cwd))
@@ -131,17 +133,29 @@ test('native view mounts with session scope, student records, forms and disposes
     assert.doesNotMatch(document.querySelector('section[aria-label="当前练习"]').textContent, /\[P1\]/)
     let copiedText = ''
     Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async text => { copiedText = text } } })
-    await flush(() => button('请导师批改（已复制请求）').click())
+    await flush(() => button('请导师批改（复制请求）').click())
     assert.equal(opened, 'chat')
-    assert.equal(copiedText, '请读取 TutorLoop 当前练习，按材料批改我刚提交的答案。')
-    assert.match(document.body.textContent, /批改请求已复制/)
+    assert.match(copiedText, /exercise_id="ex1"/)
+    assert.match(copiedText, /attempt_id="a1"/)
+    assert.match(copiedText, /不要改读其他/)
+    assert.match(document.body.textContent, /请求已复制/)
+    assert.match(client.gradingRequest('ex1', 'a1', 'en'), /exercise_id="ex1"/)
+    assert.doesNotMatch(client.gradingRequest('ex1', 'a1', 'en'), /请/)
+    // No clipboard API must not claim success or navigate away from the fallback text.
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: undefined })
+    opened = ''
+    await flush(() => button('请导师批改（复制请求）').click())
+    assert.equal(opened, '')
+    assert.match(document.body.textContent, /复制失败/)
     // 模拟聊天模型批改完成:刷新后应渲染分项表格、遗漏要点与材料外推断。
     currentAttempts = [{ id: 'a1', answer, status: 'graded', assisted: 0,
       feedback: { score: 8, max_score: 10, next_skill: '依据判断', next_exercise_instruction: '换同类材料重写。',
         criteria: [{ name: '原因', awarded: 4, max_points: 4, feedback: '要点准确。', evidence_ids: ['P1'], student_span: '取消试样检验' }],
         omissions: ['启示缺少可执行动作'], unsupported_claims: ['“市场调研不足”为材料外推断'],
         organization_feedback: '结构清楚。', improved_answer: '改进后的示范答案。' } }]
-    await flush(() => button('我已发送，刷新批改').click())
+    // Other workspace attempts remain pending; the current exercise still refreshes.
+    await flush(() => t.mock.timers.tick(15000))
+    assert.ok(requests.some(request => request.action === 'student_state' && request.payload.exercise_id === 'ex1'))
     assert.ok(document.querySelector('table.tutorloop-table'))
     assert.match(document.body.textContent, /原因 4\/4|原因.*4\/4/)
     assert.match(document.body.textContent, /遗漏要点/)
@@ -186,6 +200,41 @@ test('native view mounts with session scope, student records, forms and disposes
     assert.match(document.body.textContent, /刷新记录/)
     assert.deepEqual(savedLanguage, { language: 'auto', resolved_language: 'zh' })
     assert.ok(!requests.some(request => ['get_context', 'apply_feedback'].includes(request.action)))
+    // A qualitative result never displays null/10 or a fabricated zero.
+    currentAttempts = [{ id: 'a2', answer, status: 'graded', feedback: { grading_status: 'qualitative', score: null, max_score: null, criteria: [], omissions: [], unsupported_claims: [] } }]
+    await flush(() => button('刷新记录').click())
+    assert.match(document.body.textContent, /定性反馈/)
+    assert.doesNotMatch(document.body.textContent, /null\s*\/|教学参考分：\s*\/|教学参考分：0/)
+    // Real image events gate submission. An error cannot be acknowledged as complete.
+    currentAttempts = []
+    currentExercise = { ...exercise, id: 'image-ex', question: { ...exercise.question, question_type: 'single_choice',
+      visual_required: true, visual_supported: true,
+      stem_blocks: [{ type: 'text', text: '选择图形' }, { type: 'image', url: 'https://fb.fbstatic.cn/review.png' }],
+      options: [{ id: 'A', text: '甲' }, { id: 'B', text: '乙' }] } }
+    await flush(() => button('刷新记录').click())
+    await flush(() => document.querySelector('input[type="radio"][value="B"]').click())
+    assert.equal(button('保存并提交').disabled, true)
+    const illustration = document.querySelector('section[aria-label="当前练习"] img')
+    await flush(() => illustration.dispatchEvent(new window.Event('error')))
+    assert.match(document.body.textContent, /图片加载失败/)
+    assert.equal(document.querySelector('input[type="checkbox"]').disabled, true)
+    Object.defineProperty(illustration, 'naturalWidth', { configurable: true, value: 120 })
+    await flush(() => illustration.dispatchEvent(new window.Event('load')))
+    assert.equal(document.querySelector('input[type="checkbox"]').disabled, false)
+    assert.equal(button('保存并提交').disabled, true)
+    await flush(() => document.querySelector('input[type="checkbox"]').click())
+    assert.equal(button('保存并提交').disabled, false)
+    await flush(() => button('保存并提交').click())
+    assert.equal(requests.filter(request => request.action === 'submit_answer').at(-1).payload.visual_confirmed, true)
+    currentAttempts = []
+    currentExercise = { ...exercise, id: 'unsafe-image', question: { ...exercise.question, visual_required: true, visual_supported: true,
+      stem_blocks: [{ type: 'text', text: '<script>unsafe()</script>' },
+        ...['javascript:alert(1)', 'https://fb.fbstatic.cn.evil.invalid/a.png', 'https://fb.fbstatic.cn/a.svg', 'http://fb.fbstatic.cn/a.png'].map(url => ({ type: 'image', url }))] } }
+    await flush(() => button('刷新记录').click())
+    const unsafeSection = document.querySelector('section[aria-label="当前练习"]')
+    assert.equal(unsafeSection.querySelectorAll('img,script').length, 0)
+    assert.equal(unsafeSection.querySelector('input[type="checkbox"]').disabled, true)
+    assert.match(unsafeSection.textContent, /<script>unsafe\(\)<\/script>/)
     await flush(() => root.unmount()); root = null
     const afterUnmount = requests.length
     await flush(() => document.documentElement.setAttribute('lang', 'en'))

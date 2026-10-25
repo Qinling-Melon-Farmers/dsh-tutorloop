@@ -56,15 +56,22 @@ MAX_EXACT_CORPUS = 2000
 PREFILTER_MIN = 200
 
 
-def _prefilter(terms, chunks, limit):
-    """Cheap substring candidate selection; never tokenizes the corpus."""
+def _prefilter(terms, chunks, limit=None):
+    """Cheap conservative candidate selection; never discard a lexical hit.
+
+    ASCII word boundaries prevent concatenate from outranking the word cat.
+    Chinese substrings are only a superset; BM25 subsequently verifies their
+    actual token membership. No arbitrary top-N cut can erase the true hit.
+    """
     scored = []
+    patterns = {term: re.compile(r'(?<![a-z0-9_])' + re.escape(term) + r'(?![a-z0-9_])')
+                for term in terms if re.fullmatch(r'[a-z0-9_]+(?:\.[0-9]+)?', term)}
     for chunk in chunks:
-        text = chunk.get('search_text') or chunk['text']
+        text = unicodedata.normalize('NFKC', chunk.get('search_text') or chunk['text']).lower()
         hits = 0
         weight = 0
         for term in terms:
-            count = text.count(term)
+            count = len(patterns[term].findall(text)) if term in patterns else text.count(term)
             if count:
                 hits += 1
                 weight += 5 if count > 5 else count
@@ -73,7 +80,7 @@ def _prefilter(terms, chunks, limit):
     if not scored:
         return []
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    return [chunk for _, _, chunk in scored[:limit]]
+    return [chunk for _, _, chunk in scored]
 
 
 def _bm25_rank(terms, chunks, k):
@@ -95,8 +102,8 @@ def retrieve(query: str, chunks: list[dict], k: int = 6) -> list[dict]:
         return []
     if len(chunks) > MAX_EXACT_CORPUS:
         candidates = _prefilter(terms, chunks, max(PREFILTER_MIN, k * 40))
-        if len(candidates) <= 1:
-            return candidates[:k]
+        if not candidates:
+            return []
         return _bm25_rank(terms, candidates, k)
     return _bm25_rank(terms, chunks, k)
 

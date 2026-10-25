@@ -1,87 +1,84 @@
 # dsh-tutorloop
 
-> **0.3.2**:工作区信任持久化——DSH 重启后面板不再重新上锁,曾确认过的工作区自动恢复;BM25 检索在万级片段库上保持响应速度。
-
 [![npm version](https://img.shields.io/npm/v/dsh-tutorloop.svg)](https://www.npmjs.com/package/dsh-tutorloop)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-tutorloop.svg)](https://www.npmjs.com/package/dsh-tutorloop)
 [![license](https://img.shields.io/npm/l/dsh-tutorloop.svg)](./LICENSE)
 
 中文 · [English](./README.en.md) · [更新日志](./CHANGELOG.md) · [Releases](https://github.com/Qinling-Melon-Farmers/dsh-tutorloop/releases)
 
-**DeepSeek Harness（DSH）的本地优先学习陪练插件。** 它把“了解目标 → 查材料 → 冻结题目与量表 → 独立作答 → 有依据的反馈 → 换题或延迟复习”做成可审计的闭环：题目与评分标准在作答前冻结，批改必须引用材料证据与学生原句，练习、答案、反馈与复习队列全部落盘为本工作区的学习档案。
+**DeepSeek Harness（DSH）的通用学习陪练插件。** 把你选择的资料变成小步练习，用原文和你的作答提供反馈，再安排后续复习。可用于英语阅读、编程基础、课程概念或其他自学主题，学习记录保存在当前工作区。
 
-复用当前 DSH 会话的模型做讲解与批改，面板本身不发起模型调用;Python 教学内核随 npm 包分发,无需另装 Streamlit 或配置模型密钥。
+**资料导入 → 小步练习 → 证据反馈 → 复习。** 例如，读一篇英语短文后练习定位依据，或根据编程讲义解释一次循环的执行过程；一次聚焦一个问题，遇到困难逐步提示，再换一个例子检验理解。
 
-> [!IMPORTANT]
-> **要求 DSH `0.2.1-rc.2`、Node `22.19+ / 24+`、Python `3.11+`。** 面板访问的学习档案按工作区隔离;曾确认过的工作区列表保存在 `~/.dsh-tutorloop/trusted-workspaces.json`,删除该文件可撤销全部面板授权。
+当前 **DSH 会话模型**负责讲解、出题和主观反馈。面板不另开模型 API，也不要求额外密钥；Python 教学内核随 npm 分发，无需 Streamlit。记录保存在本机，但你选用的材料、答案与工具返回可以进入 DSH 模型上下文，请按宿主模型服务的隐私约定选择资料。
+
+## 安装
+
+要求 DSH `0.2.1-rc.2`、Node `22.19+ / 24+`、Python `3.11+`。通过正式 npm 包安装，当前版本见页首 npm 徽章。
 
 ```bash
-dsh plugin --profile web add dsh-tutorloop@0.3.2
-npx --yes --package=dsh-tutorloop@0.3.2 dsh-tutorloop setup
-npx --yes --package=dsh-tutorloop@0.3.2 dsh-tutorloop doctor
+dsh plugin --profile web add dsh-tutorloop
+npx --yes --package=dsh-tutorloop dsh-tutorloop setup
+npx --yes --package=dsh-tutorloop dsh-tutorloop doctor
 ```
 
-安装后按宿主要求重载,在带工作目录的会话中打开 **TutorLoop** 页面即可。源码安装与本地打包见[开发与发布](#开发与发布)。
+以上第一条命令用于 web profile；使用 desktop 时，在该宿主的插件管理器安装同一个 npm 包 `dsh-tutorloop`。安装到你实际启动的 profile，按宿主要求重载，在带工作目录的会话中打开 **TutorLoop**。界面与教学默认中文，支持 English/跟随 DSH；材料原文保留原语言。
 
-## 为什么选择 TutorLoop
+## 首次使用
 
-| 能力 | 用户得到什么 |
+1. 在会话中说明目标、基础和科目，保存学习档案。
+2. 选择工作区资料，例如 `materials/lesson.pdf` 或 `materials/notes.md`，也可选择公开网页。导入保留原文用于检索和练习，不自动生成可判分试卷。
+3. 确认哪些原文可以作为练习材料，哪些只是教师参考；答案与解析不混入学生题面。
+4. 从一个小任务开始，先独立尝试，卡住后再逐步提示。需要分项评分时在作答前确认要求；未准备评分标准的题先给定性反馈，已有答案后不补改标准。
+5. 独立作答。必要图像须全部成功加载并由你确认；缺图、不支持的图源或加载失败不能正常交卷。
+6. 主观题提交后复制批改请求，回到同一 DSH 会话让模型反馈。请求绑定具体练习与作答，面板读取对应反馈；待批改不是零分。
+
+可以直接在会话中说：“导入 `materials/lesson.pdf`，先了解我的基础，再用小问题带我练习；反馈请引用材料和我的原句，最后安排复习。”
+
+## 能力与边界
+
+| 能力 | 行为 |
 | --- | --- |
-| 冻结量表 | 题目、参考答案与评分标准在作答前冻结;批改不得为迎合答案修改标准 |
-| 证据批改 | 分项得分引用材料证据与学生原句,区分漏点、材料外推断与组织问题 |
-| 卷面呈现 | 材料原文与出处直接展示在题面,长材料默认折叠;参考答案不提前公开 |
-| 一键批改闭环 | 主观题提交后一键复制批改请求并切回聊天,批改完成面板自动更新 |
-| 本地真题库 | 导入解析文件后可选 219 套副省级真题与模考、约 2.3 万道已核验题目 |
-| 整卷与组卷 | 整卷逐题作答、行测单选自动判分;按科目与考点随机组卷;正确率报告 |
-| 工作区隔离 | 学习档案、导师出的题与真题库都随工作区走;面板适配任意学科,不默认国考 |
-| 可治理的记忆 | 提示与示范单独登记,带提示做对不计独立掌握;Leitner 间隔复习 |
-| 本地优先 | 全部数据在本工作区 SQLite;不内置模型密钥,不依赖云端记忆服务 |
+| 证据反馈 | 校验材料编号与学生原句；模型对内容的理解和判断仍需核对 |
+| 学生/教师分离 | 学生题面隐藏参考答案、参考图文、量表与教师来源；旧来源未显式公开时隐藏，保留旧题干材料 |
+| 未标定题 | `uncalibrated` 只给定性反馈，分项分值、总分、满分为 null，不推进掌握或计算数值正确率 |
+| 图文题 | 结构化文本/图像，不执行原始 HTML；图源仅限 `fb.fbstatic.cn`、`fb.fenbike.cn` 的 HTTPS 地址，仍需确认实际加载 |
+| 可选题库适配 | 有兼容题库时支持选题、整卷与组卷；每轮绑定独立练习实例，不继承旧轮成绩 |
+| 通用主题与长度 | 科目/技能来自题目或档案；`characters` 统计非空白字符（含标点），`words` 按词计数，均为教学口径 |
+| 检索 | 保留引用原文，修复大型库候选召回；候选集 BM25 排序不承诺与全库完全等价 |
+| 复习与记忆 | 区分辅助、重做与独立作答，安排后续复测；Memoir 只生成待审阅候选摘要 |
+| StudyHub 导出 | 内部转换器生成草稿与来源说明；当前不支持图文而明确拒绝视觉题，未标定开放题不能导出评分量表 |
 
-适合需要“练过即留痕、错因可回查”的个人备考与自学工作流。它不是官方考试评分系统、监考工具,也不是向量语义知识库。
+题库适配是可选能力，资料导入和通用练习无需现成题库。题库数据不随 npm 分发；使用适配器需要你有权使用且符合格式的材料。可练性取决于原文、选项和参考是否完整，来源声明不代表权威认证。适配格式见[后端说明](./backend/README.md)。
 
-## 工作原理
+18 个 `tutor_*` 教师工具与学生面板共用后端。新题用 `student_material_ids` 明确公开来源；`tutor_prepare_rubric` 可在作答前确认题目特定量表。`get_context`、`create_practice`、`prepare_rubric`、`apply_feedback`、`find_materials` 仅供教师工具调用。用户仍可自行读取自己的原件；面板不是防作弊系统。提交编号和版本避免把重试变成另一份答案；不是所有写入都幂等，取消也可能晚于提交，应先重读状态。
 
-```text
-了解目标(tutor_set_profile) ──► 检索/导入材料(import/find/fetch)
-        │                              │
-        ▼                              ▼
-出题并冻结量表(create_practice) ◄── 真题库(zhenti:*/内置示例)
-        │
-        ▼
-独立作答(submit_answer, 单选自动判分) ──► 一键批改请求 → DSH 模型
-        │                                      │
-        ▼                                      ▼
- 复习队列(1/1/3/7天) ◄── 结构化反馈(apply_feedback, 表格呈现)
-```
+TutorLoop 不是官方评分或监考平台，也不声称复现 ChatGPT 内部架构或达到同等教学质量。模型已收到的教师信息仍可能被其披露；主观反馈质量需要实际评估。
 
-教师工具(17 个 `tutor_*` 动作)与学生面板共用同一套冻结数据:面板经 `public_exercise` 脱敏,参考答案与量表只在教师上下文出现。所有写入幂等且带版本校验,异常作答不计零分。GUI 与教学交互默认中文,语言支持中文 / English / 跟随 DSH,材料原文永不翻译。
+## 工作区与授权
 
-## 配置
-
-| 项 | 默认 | 说明 |
+| 配置 | 默认 | 说明 |
 | --- | --- | --- |
-| `dbPath` | `<工作区>/.dsh-tutorloop/tutor.sqlite3` | 学习档案位置;可在宿主配置显式指向既有库 |
-| `workspacePath` | 无 | 预信任的面板工作区(可选;日常无需配置) |
-| 语言 | 中文 | 中文 / English / 跟随 DSH,设置随学习工作区保存 |
+| `dbPath` | `<workspace>/.dsh-tutorloop/tutor.sqlite3` | 显式指定同一库意味着主动共享记录 |
+| `workspacePath` | 无 | 显式预信任工作区；日常使用会话 cwd |
+| `trustStore` | `~/.dsh-tutorloop/trusted-workspaces.json` | 兼容旧 JSON，新确认写入对应 `.d` 目录 |
 
-真题库数据不随包分发:把解析文件放入工作区 `粉笔试卷/答案解析/`、行测选项放入 `粉笔试卷/题目选项/`,面板首次“载入真题列表”时自动建立索引(`粉笔试卷/真题索引.json`)。
+新授权位于 `~/.dsh-tutorloop/trusted-workspaces.json.d/`，按工作区独立原子写入，避免多实例覆盖；这不是共享远程宿主的多租户鉴权。
 
-## 边界
-
-- 评分是教学诊断:真题答案与解析来自本地核验的机构文件,不代表官方评分标准。
-- 参考答案只在交卷后经教师上下文披露;面板不是防作弊监考系统。
-- PDF 导入是资料入库(检索与出题素材),不自动生成可判分试卷。
-- Memoir 只导出可审阅的学习习惯候选摘要,不自动写长期记忆。
+**撤销全部持久授权：同时删除旧 `trusted-workspaces.json` 和 `trusted-workspaces.json.d/`，再重启所有相关宿主。** 运行进程仍保留内存授权；若有显式 `workspacePath` 也须移除。自定义 `trustStore` 时处理对应文件与 `.d` 目录。撤销授权不删除学习库。
 
 ## 开发与发布
 
 ```bash
 git clone https://github.com/Qinling-Melon-Farmers/dsh-tutorloop.git
-cd dsh-tutorloop && npm ci
-npm run build && node scripts/cli.mjs setup
-npm test && npm run test:python
+cd dsh-tutorloop
+npm ci
+npm run build
+node scripts/cli.mjs setup
+npm test
+npm run test:python
 ```
 
-CI(Windows/Linux 双系统)在 PR 与 main 上运行全部双栈测试;推送 `v*` 标签经 GitHub 环境校验后以 OIDC 发布 npm 并附 GitHub Release。详见 [CI 与机器人](./docs/AUTOMATION.md)、[架构说明](./docs/ARCHITECTURE.md) 与 [验证记录](./docs/VALIDATION.md)。
+CI 在 Windows/Linux 上为 PR 与 main 运行检查；推送 `v*` 标签后，经验证与 GitHub 环境配置，以 OIDC 发布 npm 并创建 GitHub Release。附件取自 npm 实际 tarball 并验证完整性。详见 [CI 与机器人](./docs/AUTOMATION.md)、[架构](./docs/ARCHITECTURE.md)和[后端协议](./backend/README.md)；已执行检查与未完成验收以[验证记录](./docs/VALIDATION.md)为准。
 
 Apache-2.0 License © 2026 Qinling-Melon-Farmers

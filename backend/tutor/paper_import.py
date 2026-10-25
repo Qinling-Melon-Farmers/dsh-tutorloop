@@ -179,7 +179,7 @@ def _import_files(paths):
                                  exam_level=document['exam_level'], extraction_method='pdf_text',
                                  publisher=document['publisher'], is_official_exam=document['is_official_exam'],
                                  verification_status='unverified', answer_status=document['answer_status'],
-                                 needs_visual_review=True, original_path=document['path'],
+                                 needs_visual_review=True, image_count=page['image_count'], original_path=document['path'],
                                  search_text=unicodedata.normalize('NFKC', chunk['text']))
                 chunks.extend(rows)
             count = db.add_chunks(chunks)

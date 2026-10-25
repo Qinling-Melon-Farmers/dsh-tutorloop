@@ -14,8 +14,8 @@ class GradingTest(TestCase):
             ]
         }
         model_out = {
-            "criteria": [{"name": "信息覆盖", "awarded": 9, "feedback": "基本正确"},
-                         {"name": "表达", "awarded": 2.2, "feedback": "部分"}],
+            "criteria": [{"name": "信息覆盖", "awarded": 9, "feedback": "基本正确", "evidence_ids": ["S1"], "student_span": "答案"},
+                         {"name": "表达", "awarded": 2.2, "feedback": "部分", "evidence_ids": ["S1"], "student_span": "答案"}],
             "strengths": [], "omissions": [], "unsupported_claims": [],
             "organization_feedback": "良好", "improved_answer": "示范", "next_skill": "提取证据",
             "next_exercise_instruction": "再练一题",
@@ -30,7 +30,7 @@ class GradingTest(TestCase):
     def test_missing_duplicate_extra_and_invalid_citations_fail(self):
         q = {"difficulty": "基础", "material": "事实", "stem": "概括", "word_limit": 60,
              "reference_answer": "事实", "rubric": [{"name": "事实", "requirement": "概括事实", "points": 10, "evidence_ids": ["P1"]}]}
-        base = {"criteria": [{"name": "事实", "awarded": 5, "feedback": "修改"}], "strengths": [],
+        base = {"criteria": [{"name": "事实", "awarded": 5, "feedback": "修改", "evidence_ids": ["P1"], "student_span": "我的答案"}], "strengths": [],
                 "omissions": [], "unsupported_claims": [], "organization_feedback": "", "improved_answer": "事实",
                 "next_skill": "提炼", "next_exercise_instruction": "换材料"}
         sources = [{"id": "P1"}]
@@ -45,7 +45,7 @@ class GradingTest(TestCase):
     def test_overlength_feedback_validation_is_idempotent(self):
         q = {"difficulty": "基础", "material": "事实", "stem": "概括", "word_limit": 2,
              "reference_answer": "事实", "rubric": [{"name": "事实", "requirement": "概括事实", "points": 10, "evidence_ids": ["P1"]}]}
-        feedback = {"criteria": [{"name": "事实", "awarded": 5, "feedback": "修改"}], "strengths": [],
+        feedback = {"criteria": [{"name": "事实", "awarded": 5, "feedback": "修改", "evidence_ids": ["P1"], "student_span": "我的长答案"}], "strengths": [],
                     "omissions": [], "unsupported_claims": [], "organization_feedback": "压缩重复内容",
                     "improved_answer": "事实", "next_skill": "压缩", "next_exercise_instruction": "删重复"}
         first = validate_feedback(q, "我的长答案", [{"id": "P1"}], feedback)

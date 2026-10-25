@@ -28,7 +28,7 @@ class ProfileWorkflowTest(TestCase):
 
     def complete(self, ex, sid, answer='从过去持续至今'):
         result = controller.submit_answer(ex['id'], answer, sid, controller.get_exercise(ex['id'])['version'])
-        feedback = {'criteria': [{'name': '持续关系', 'awarded': 10, 'feedback': '正确指出持续关系', 'evidence_ids': ['P1']}],
+        feedback = {'criteria': [{'name': '持续关系', 'awarded': 10, 'feedback': '正确指出持续关系', 'evidence_ids': ['P1'], 'student_span': answer}],
                     'strengths': ['指出持续至今'], 'omissions': [], 'unsupported_claims': [], 'organization_feedback': '',
                     'improved_answer': '从过去持续至今', 'next_skill': '时态解释', 'next_exercise_instruction': '换句验证'}
         return controller.apply_feedback(result['attempt_id'], feedback)

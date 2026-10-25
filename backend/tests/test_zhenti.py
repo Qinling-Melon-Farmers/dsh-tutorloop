@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import concurrent.futures
+import threading
 from unittest.mock import patch
 import unittest
 
@@ -21,6 +23,9 @@ class ZhentiTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        env_patch = patch.dict(os.environ, {'TUTOR_WORKSPACE_PATH': str(self.root / 'ws')})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
         db_patch = patch.object(storage, 'DB_PATH', self.root / 'ws' / '.dsh-tutorloop' / 'tutor.sqlite3')
         db_patch.start()
         self.addCleanup(db_patch.stop)
@@ -135,6 +140,157 @@ class ZhentiTest(unittest.TestCase):
         zhenti.build_index(force=True)
         with self.assertRaises(ValueError):
             zhenti.build_seed('zhenti:900001:501')
+
+    def test_custom_database_does_not_relocate_workspace_bank(self):
+        with patch.object(storage, 'DB_PATH', self.root / 'elsewhere' / 'data' / 'custom.sqlite3'):
+            self.assertEqual(len(zhenti.papers()['papers']), 2)
+            self.assertEqual(zhenti.workspace_root(), self.root / 'ws')
+
+    def test_missing_options_or_invalid_choice_never_enter_mix_pool(self):
+        file = self.root / 'ws' / '粉笔试卷' / '题目选项' / '900001.json'
+        data = json.loads(file.read_text(encoding='utf-8'))
+        data['questions'] = data['questions'][1:]
+        _write_json(file, data)
+        index = zhenti.build_index(force=True)
+        xingce = next(p for p in index['papers'] if p['subject'] == '行测')
+        self.assertFalse(xingce['questions'][0]['ok'])
+        self.assertTrue(xingce['questions'][1]['ok'])
+        with self.assertRaises(ValueError):
+            zhenti.start_quiz(subject='行测', skill='政治常识', count=1)
+        plan = zhenti.start_quiz(subject='行测', count=50)
+        self.assertEqual(plan['items'], ['zhenti:900001:502'])
+        self.assertFalse(zhenti.state()['active'])
+        solution = self.root / 'ws' / '粉笔试卷' / '答案解析' / '行测' / '真题卷' / '2024行测样卷.解析.json'
+        data = json.loads(solution.read_text(encoding='utf-8'))
+        data['solutions'][1]['correctAnswer']['choice'] = '1,2'
+        _write_json(solution, data)
+        index = zhenti.build_index(force=True)
+        self.assertFalse(next(p for p in index['papers'] if p['subject'] == '行测')['questions'][1]['ok'])
+
+    def test_new_quiz_has_no_prior_answers_and_mode_is_inherited(self):
+        first = self.action('zhenti_start_quiz', paper_id=900001, mode='exam')
+        ex = self.action('student_state')['exercise']
+        self.action('submit_answer', exercise_id=ex['id'], answer='B', submission_id='first-quiz', expected_version=ex['version'])
+        self.action('zhenti_quit')
+        second = self.action('zhenti_start_quiz', paper_id=900001, mode='exam')
+        self.assertNotEqual(first['quiz_id'], second['quiz_id'])
+        report = self.action('zhenti_report')
+        self.assertEqual(report['answered'], 0)
+        self.assertIsNone(report['accuracy'])
+        self.assertIsNone(report['items'][0]['answer'])
+        self.assertNotEqual(report['items'][0]['exercise_id'], ex['id'])
+        self.action('zhenti_next')
+        self.assertEqual(self.action('student_state')['exercise']['mode'], 'exam')
+
+    def test_pending_and_qualitative_report_only_this_round(self):
+        self.action('zhenti_start_quiz', paper_id=900002)
+        ex = self.action('student_state')['exercise']
+        pending = self.action('submit_answer', exercise_id=ex['id'], answer='先作答再核对。', submission_id='pending', expected_version=ex['version'])
+        report = self.action('zhenti_report')
+        self.assertEqual((report['answered'], report['pending'], report['scored']), (1, 1, 0))
+        self.assertEqual(report['items'][0]['attempt_id'], pending['attempt_id'])
+        self.assertEqual(report['items'][0]['grading_status'], 'pending')
+        with storage.connect() as con:
+            con.execute("UPDATE tutor_attempts SET status='graded',feedback=? WHERE id=?", (json.dumps({'score': None, 'grading_status': 'qualitative'}), pending['attempt_id']))
+        report = self.action('zhenti_report')
+        self.assertEqual((report['answered'], report['qualitative'], report['scored']), (1, 1, 0))
+        self.assertIsNone(report['accuracy'])
+
+    def test_quiz_failure_and_old_schema_do_not_create_fake_active_round(self):
+        with patch('tutor.zhenti.build_seed', side_effect=ValueError('不能加载')):
+            with self.assertRaises(ValueError):
+                self.action('zhenti_start_quiz', paper_id=900001)
+        self.assertFalse(zhenti.state()['active'])
+        storage.set_value('zhenti_quiz_active', {'quiz_id': 'old', 'items': ['zhenti:900001:501'], 'index': 0})
+        self.assertTrue(zhenti.state()['invalidated'])
+        self.assertFalse(zhenti.state()['active'])
+        with self.assertRaises(ValueError):
+            zhenti.report()
+
+    def test_commit_does_not_advance_when_exercise_creation_fails(self):
+        self.action('zhenti_start_quiz', paper_id=900001)
+        before = zhenti.state()
+        with patch('tutor.controller._insert_exercise', side_effect=ValueError('创建失败')):
+            with self.assertRaises(ValueError):
+                self.action('zhenti_next')
+        self.assertEqual(zhenti.state(), before)
+
+    def test_failed_binding_rolls_back_exercise_and_current_pointer(self):
+        self.action('zhenti_start_quiz', paper_id=900001)
+        before = zhenti.state()
+        current = storage.get_value('current_exercise')
+        with storage.connect() as con:
+            count = con.execute('SELECT COUNT(*) FROM exercises').fetchone()[0]
+        for function, action in [('activate_quiz', 'zhenti_start_quiz'), ('commit_quiz_step', 'zhenti_next')]:
+            with patch('tutor.zhenti.' + function, side_effect=ValueError('绑定失败')):
+                with self.assertRaises(ValueError):
+                    self.action(action, **({'paper_id': 900001} if action == 'zhenti_start_quiz' else {}))
+            self.assertEqual(storage.get_value('current_exercise'), current)
+            self.assertEqual(zhenti.state(), before)
+            with storage.connect() as con:
+                self.assertEqual(con.execute('SELECT COUNT(*) FROM exercises').fetchone()[0], count)
+
+    def test_concurrent_next_rolls_back_losing_request_completely(self):
+        self.action('zhenti_start_quiz', paper_id=900001)
+        original = zhenti.next_quiz_plan
+        barrier = threading.Barrier(2)
+        def plan():
+            result = original()
+            barrier.wait(timeout=10)
+            return result
+        def advance(_):
+            try:
+                self.action('zhenti_next')
+                return 'success'
+            except ValueError:
+                return 'conflict'
+        with patch('tutor.zhenti.next_quiz_plan', side_effect=plan):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(advance, range(2)))
+        self.assertCountEqual(results, ['success', 'conflict'])
+        state = zhenti.state()
+        self.assertEqual(state['index'], 1)
+        self.assertEqual(storage.get_value('current_exercise'), state['current_exercise_id'])
+        with storage.connect() as con:
+            self.assertEqual(con.execute('SELECT COUNT(*) FROM exercises').fetchone()[0], 2)
+
+    def test_rich_images_preserved_and_unsafe_urls_remain_blocked(self):
+        from tutor.rich_content import html_to_blocks, analyze_blocks
+        data = self.root / 'ws' / '粉笔试卷' / '答案解析' / '行测' / '真题卷' / '2024行测样卷.解析.json'
+        solution = json.loads(data.read_text(encoding='utf-8'))
+        solution['solutions'][0]['content'] = '<p>观察图形</p><img src="https://fb.fbstatic.cn/test/stem.png">'
+        _write_json(data, solution)
+        path = self.root / 'ws' / '粉笔试卷' / '题目选项' / '900001.json'
+        options = json.loads(path.read_text(encoding='utf-8'))
+        options['questions'][0]['options'] = [f'<img src="https://fb.fenbike.cn/test/{i}.png">' for i in range(4)]
+        options['questions'][0]['material'] = {'content': '<img src="https://fb.fbstatic.cn/chart.png">'}
+        _write_json(path, options)
+        question, sources = zhenti.build_seed('zhenti:900001:501')
+        self.assertTrue(question['visual_required'])
+        self.assertTrue(question['visual_supported'])
+        self.assertEqual(question['options'][0]['text'], '')
+        self.assertEqual(question['options'][0]['blocks'][0]['type'], 'image')
+        self.assertEqual(sources[0]['text'], '')
+        self.assertTrue(sources[0]['blocks'])
+        self.assertEqual(sources[0]['content_role'], 'student_material')
+        self.assertEqual(question['student_material_ids'], ['P1'])
+        relative = analyze_blocks(html_to_blocks('<img src="//fb.fbstatic.cn/chart.png">'))
+        self.assertTrue(relative['visual_supported'])
+        self.assertEqual(relative['blocks'][0]['url'], 'https://fb.fbstatic.cn/chart.png')
+        for url in ('http://fb.fbstatic.cn/a.png', 'https://fb.fbstatic.cn.evil/a.png', 'file:///a.png', 'https://127.0.0.1/a.png', 'https://u:p@fb.fbstatic.cn/a.png'):
+            visual = analyze_blocks(html_to_blocks(f'<img src="{url}">'))
+            self.assertTrue(visual['visual_required'])
+            self.assertFalse(visual['visual_supported'])
+            self.assertEqual(visual['blocks'][0]['url'], '')
+
+    def test_index_traversal_is_rejected_and_cannot_read_outside_workspace(self):
+        index = zhenti.build_index()
+        index['papers'][0]['name'] = '../../private'
+        _write_json(zhenti._index_path(), index)
+        with self.assertRaises(ValueError):
+            zhenti.papers()
+        with self.assertRaises(ValueError):
+            zhenti._options_path('../../private')
 
 
 if __name__ == '__main__':

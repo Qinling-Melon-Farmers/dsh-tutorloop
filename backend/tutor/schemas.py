@@ -20,25 +20,34 @@ class Lesson(BaseModel):
 
 
 class RubricItem(BaseModel):
-    name: str
-    requirement: str
+    name: str = Field(min_length=1)
+    requirement: str = Field(min_length=1)
     points: int = Field(ge=1, le=10)
-    evidence_ids: list[str]
+    evidence_ids: list[str] = Field(min_length=1)
 
 
 class ChoiceOption(BaseModel):
     id: str
     text: str
+    blocks: list[dict] = Field(default_factory=list)
 
 
 class Question(BaseModel):
     id: str = ""
-    subject: str = "申论"
-    skill: str = "材料提炼"
+    subject: str = ""
+    skill: str = ""
     question_type: Literal["short_answer", "single_choice"] = "short_answer"
     options: list[ChoiceOption] = Field(default_factory=list)
     correct_option_id: str | None = None
     explanation: str = ""
+    student_material_ids: list[str] | None = None
+    stem_blocks: list[dict] = Field(default_factory=list)
+    material_blocks: list[dict] = Field(default_factory=list)
+    reference_blocks: list[dict] = Field(default_factory=list)
+    visual_required: bool = False
+    visual_supported: bool = True
+    rubric_status: Literal["ready", "uncalibrated"] = "ready"
+    length_unit: Literal["characters", "words"] = "characters"
     difficulty: Literal["基础", "提高", "挑战"]
     material: str
     stem: str
@@ -50,7 +59,7 @@ class Question(BaseModel):
 
 class CriterionGrade(BaseModel):
     name: str
-    awarded: float = Field(ge=0, le=10)
+    awarded: float | None = Field(default=None, ge=0, le=10)
     feedback: str
     evidence_ids: list[str] | None = None
     student_span: str | None = None

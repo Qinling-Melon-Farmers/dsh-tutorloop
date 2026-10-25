@@ -42,6 +42,25 @@ class LargeCorpusTest(unittest.TestCase):
     def test_empty_query_stays_empty(self):
         self.assertEqual(retrieve('的', self.fillers + [{'id': 'S1', 'title': 't', 'text': '亮度管理'}]), [])
 
+    def test_threshold_preserves_api_case_and_nfkc_without_mutating_source(self):
+        for size in (1999, 2000):
+            source = {'id': 'S1', 'text': 'API 与⾏政知识', 'title': '原文'}
+            chunks = self.fillers[:size] + [source]
+            for query in ('API', 'api', '行政'):
+                self.assertIs(retrieve(query, chunks, 1)[0], source)
+            self.assertEqual(source['text'], 'API 与⾏政知识')
+
+    def test_cat_is_not_crowded_out_by_high_frequency_substrings(self):
+        chunks = [{'id': str(i), 'text': 'concatenate ' * 8} for i in range(2000)]
+        target = {'id': 'target', 'text': 'cat'}
+        self.assertEqual(retrieve('cat', chunks + [target], 1), [target])
+
+    def test_single_candidate_still_requires_token_match(self):
+        # The substring is not an independent token; candidate count must not
+        # change lexical matching semantics.
+        chunks = self.fillers + [{'id': 'noise', 'text': 'concatenate'}]
+        self.assertEqual(retrieve('cat', chunks), [])
+
 
 if __name__ == '__main__':
     unittest.main()

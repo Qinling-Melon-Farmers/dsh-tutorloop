@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
@@ -60,12 +60,66 @@ test('bundled backend: generic teaching, student privacy and workspace isolation
   }
 })
 
+test('seven real-exam actions cross HTTP, JS bridge and bundled Python with teacher/origin boundaries', { skip: !process.env.TUTORLOOP_TEST_PYTHON && process.env.TUTORLOOP_E2E !== '1' }, async () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'tutorloop-真题-http-'))
+  const save = (parts, data) => {
+    const directory = join(workspace, ...parts.slice(0, -1))
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(directory, parts.at(-1)), JSON.stringify(data))
+  }
+  const config = { pythonPath: process.env.TUTORLOOP_TEST_PYTHON ?? 'python', workspacePath: workspace, trustStore: join(workspace, 'trust.json') }
+  const request = createBridge(config)
+  const trust = createWorkspaceTrust(config)
+  const server = createServer(createActionRoute(request, trust).handler)
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const base = `http://127.0.0.1:${server.address().port}`
+  const post = async (action, payload = {}, headers = {}) => {
+    const response = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json', origin: base, ...headers }, body: JSON.stringify({ action, payload, cwd: workspace }) })
+    return { status: response.status, ...await response.json() }
+  }
+  const call = async (action, payload) => {
+    const result = await post(action, payload)
+    assert.equal(result.status, 200, `${action}: ${JSON.stringify(result)}`)
+    assert.equal(result.ok, true)
+    return result.data
+  }
+  try {
+    save(['粉笔试卷', '答案解析', '行测', '真题卷', '2024合成样卷.解析.json'], {
+      paper_id: 990001, name: '2024合成样卷', solutions: [
+        { id: 501, content: '<p>二加二是多少？</p>', correctAnswer: { choice: '1', type: 201 }, solution: '<p>答案为四。</p>', keypoints: [{ name: '算术' }] },
+        { id: 502, content: '<p>一加一是多少？</p>', correctAnswer: { choice: '0', type: 201 }, solution: '<p>答案为二。</p>', keypoints: [{ name: '算术' }] },
+      ],
+    })
+    save(['粉笔试卷', '题目选项', '990001.json'], { questions: [{ id: 501, options: ['3', '4'] }, { id: 502, options: ['2', '3'] }] })
+    assert.equal((await call('zhenti_papers')).papers.length, 1)
+    assert.equal((await call('zhenti_paper', { paper_id: 990001 })).questions.length, 2)
+    assert.equal((await call('zhenti_quiz_state')).active, false)
+    assert.equal((await call('zhenti_start_quiz', { paper_id: 990001 })).total, 2)
+    const exercise = (await call('student_state')).exercise
+    assert.ok(!JSON.stringify(exercise).includes('correct_option_id'))
+    await call('submit_answer', { exercise_id: exercise.id, answer: 'B', submission_id: 'http-real-exam-1', expected_version: exercise.version })
+    assert.equal((await call('zhenti_next')).index, 1)
+    const report = await call('zhenti_report')
+    assert.equal(report.total, 2)
+    assert.equal(report.answered, 1)
+    assert.equal((await call('zhenti_quit')).active, false)
+    for (const action of ['get_context', 'apply_feedback', 'create_practice', 'prepare_rubric', 'find_materials']) assert.equal((await post(action)).status, 403)
+    assert.equal((await post('zhenti_papers', {}, { origin: 'https://other.example' })).status, 403)
+    assert.equal((await post('zhenti_papers', {}, { 'sec-fetch-site': 'cross-site' })).status, 403)
+  } finally {
+    server.closeAllConnections()
+    await new Promise(resolve => server.close(resolve))
+    rmSync(workspace, { recursive: true, force: true })
+  }
+})
+
 test('real student API language settings persist per workspace and resolve auto', { skip: !process.env.TUTORLOOP_TEST_PYTHON && process.env.TUTORLOOP_E2E !== '1' }, async () => {
   const workspace = mkdtempSync(join(tmpdir(), 'tutorloop-language-'))
   const other = mkdtempSync(join(tmpdir(), 'tutorloop-language-other-'))
   const config = { pythonPath: process.env.TUTORLOOP_TEST_PYTHON ?? 'python', workspacePath: workspace, language: 'zh' }
   const request = createBridge(config)
-  const trust = createWorkspaceTrust(config)
+  const trust = createWorkspaceTrust({ ...config, trustStore: join(workspace, 'trust.json') })
   const server = createServer(createActionRoute(request, trust).handler)
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')

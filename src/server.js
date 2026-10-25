@@ -1,11 +1,20 @@
-import { isAbsolute, resolve, relative, sep, extname, join, dirname } from 'node:path'
+import { isAbsolute, resolve, relative, sep, extname, join } from 'node:path'
 import { realpath } from 'node:fs/promises'
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, renameSync, unlinkSync, lstatSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { createHash, randomUUID } from 'node:crypto'
+import { STUDENT_ACTIONS } from './actions.js'
 
-export const PUBLIC_ACTIONS = new Set(['overview', 'list_sources', 'start_practice', 'student_state', 'public_state', 'reveal', 'submit_answer', 'set_profile', 'import_file', 'import_folder', 'find_materials', 'search_materials', 'fetch_material', 'method_cards', 'export_memoir', 'language_settings', 'zhenti_papers', 'zhenti_paper', 'zhenti_start_quiz', 'zhenti_quiz_state', 'zhenti_next', 'zhenti_quit', 'zhenti_report'])
+export const PUBLIC_ACTIONS = new Set(STUDENT_ACTIONS)
 
-function key(path) { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
+function key(path) {
+  let full = resolve(path)
+  if (process.platform !== 'win32') return full
+  // Extended Windows paths and their ordinary spelling identify one grant.
+  if (/^\\\\\?\\UNC\\/i.test(full)) full = '\\\\' + full.slice(8)
+  else if (/^\\\\\?\\[a-z]:\\/i.test(full)) full = full.slice(4)
+  return full.toLowerCase()
+}
 
 /**
  * Workspace trust with a per-user store of previously host-confirmed
@@ -13,26 +22,55 @@ function key(path) { const full = resolve(path); return process.platform === 'wi
  * user already worked in. Only host-side touches (tool calls or session
  * prompts) add entries; the store lives in the user's own profile
  * directory and is equivalent to configuring workspacePath explicitly.
+ * Legacy JSON remains readable; new confirmations use independent atomic
+ * entries in `<store>.d`, so concurrent hosts cannot overwrite one another.
+ * Revoke all persistent grants by deleting BOTH the legacy file and entry
+ * directory, then restarting hosts (already running hosts retain memory).
  */
 export function createWorkspaceTrust(config = {}) {
   const seen = new Set()
   if (config.workspacePath) seen.add(key(config.workspacePath))
   const store = config.trustStore ?? join(homedir(), '.dsh-tutorloop', 'trusted-workspaces.json')
+  const entries = `${store}.d`
+  const addSaved = value => {
+    if (typeof value === 'string' && isAbsolute(value)) seen.add(key(value))
+  }
+  const parse = path => JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''))
   try {
-    const saved = JSON.parse(readFileSync(store, 'utf8'))
-    if (Array.isArray(saved.workspaces)) for (const item of saved.workspaces) seen.add(item)
+    const saved = parse(store)
+    if (Array.isArray(saved.workspaces)) for (const item of saved.workspaces) addSaved(item)
   } catch { /* first run or unreadable store: start empty */ }
-  const persist = () => {
+  try {
+    if (lstatSync(entries).isSymbolicLink()) throw new Error('Trust entry directory must not be a symlink')
+    for (const entry of readdirSync(entries, { withFileTypes: true })) {
+      if (!entry.isFile()) continue
+      const filename = entry.name
+      if (!/^[a-f0-9]{64}\.json$/.test(filename)) continue
+      try {
+        const saved = parse(join(entries, filename))
+        // An entry must name exactly the workspace its filename identifies.
+        if (typeof saved.workspace === 'string' && isAbsolute(saved.workspace)
+          && filename === `${createHash('sha256').update(key(saved.workspace)).digest('hex')}.json`) addSaved(saved.workspace)
+      } catch { /* a corrupt entry cannot grant trust */ }
+    }
+  } catch { /* no independent entries yet */ }
+  const persist = item => {
+    let temporary
     try {
-      mkdirSync(dirname(store), { recursive: true })
-      writeFileSync(store, JSON.stringify({ workspaces: [...seen] }))
+      mkdirSync(entries, { recursive: true })
+      if (lstatSync(entries).isSymbolicLink()) throw new Error('Trust entry directory must not be a symlink')
+      const filename = `${createHash('sha256').update(item).digest('hex')}.json`
+      temporary = join(entries, `.${randomUUID()}.tmp`)
+      writeFileSync(temporary, JSON.stringify({ workspace: item }), { flag: 'wx', mode: 0o600 })
+      renameSync(temporary, join(entries, filename))
     } catch { /* best effort; in-memory trust still works this session */ }
+    finally { if (temporary) { try { unlinkSync(temporary) } catch {} } }
   }
   return {
     touch(path) {
       if (typeof path === 'string' && isAbsolute(path)) {
         const item = key(path)
-        if (!seen.has(item)) { seen.add(item); persist() }
+        if (!seen.has(item)) { seen.add(item); persist(item) }
       }
     },
     allows(path) { return typeof path === 'string' && isAbsolute(path) && seen.has(key(path)) },

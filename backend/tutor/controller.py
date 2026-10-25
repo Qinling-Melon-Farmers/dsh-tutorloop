@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from . import storage as db
 from . import zhenti
-from .llm import _question, validate_feedback
+from .llm import _question, validate_feedback, teacher_reference
 from .profiles import default_profile, generic_profile, exam_profile
 
 
@@ -109,7 +109,8 @@ def create_practice(question, source_ids, mode='coach'):
 
 
 def get_exercise(exercise_id=None):
-    exercise_id = exercise_id or db.get_value('current_exercise')
+    if exercise_id is None:
+        exercise_id = zhenti.quiz_current_exercise_id() or db.get_value('current_exercise')
     with db.connect() as con:
         row = con.execute('SELECT * FROM exercises WHERE id=?', (exercise_id,)).fetchone()
     if not row:
@@ -124,28 +125,78 @@ def get_exercise(exercise_id=None):
 def public_exercise(exercise):
     result = copy.deepcopy(exercise)
     q = result['question']
-    for key in ('reference_answer', 'correct_option_id', 'explanation', 'rubric', 'hint'):
+    for key in ('reference_answer', 'reference_blocks', 'correct_option_id', 'explanation', 'rubric', 'hint'):
         q.pop(key, None)
-    # Students see the material passages (卷面) but not teacher references.
-    # sources carry material text and provenance only; answers live in the
-    # question fields removed above, so mapping them here leaks nothing.
-    result['materials'] = [{'id': s.get('id'), 'title': s.get('title'),
-                             'locator': s.get('locator'), 'url': s.get('url'),
-                             'text': s.get('text')} for s in result.pop('sources', [])]
+    # Old snapshots did not distinguish evidence from student passages.
+    # Their question.material remains readable; never expose unknown sources.
+    from .rich_content import analyze_blocks
+    student_ids = set(q.get('student_material_ids') or [])
+    result['materials'] = []
+    for source in result.pop('sources', []):
+        if source.get('id') not in student_ids or teacher_reference(source):
+            continue
+        safe = {key: source.get(key) for key in ('id', 'title', 'locator', 'url', 'text', 'content_role', 'material_role', 'publisher', 'year', 'needs_visual_review') if key in source}
+        analysis = analyze_blocks(source.get('blocks') or [])
+        safe.update(blocks=analysis['blocks'], visual_required=analysis['visual_required'], visual_supported=analysis['visual_supported'])
+        result['materials'].append(safe)
     return result
 
 
-def create_exercise(question, sources, mode='coach', seed_id=None):
+def _new_exercise(question, sources, mode='coach', seed_id=None):
     if mode not in ('coach', 'exam'):
         raise ValueError('练习模式须为coach或exam。')
+    question = copy.deepcopy(question)
+    profile = learning_profile()
+    question['subject'] = question.get('subject') or next(iter(profile.get('subjects') or []), profile['name'])
+    question['skill'] = question.get('skill') or profile['goal']
+    if question.get('student_material_ids') is None:
+        question['student_material_ids'] = [s['id'] for s in sources if s.get('kind') == 'synthetic_case' and not teacher_reference(s)]
     q = _question(question, sources)
     exercise_id = uuid4().hex
     seed_id = seed_id or 'generated:' + exercise_id
+    return {'id': exercise_id, 'seed_id': seed_id, 'question': q, 'sources': sources, 'mode': mode, 'profile': profile}
+
+
+def _insert_exercise(exercise, con):
+    q = exercise['question']
+    con.execute('INSERT INTO exercises(id,seed_id,topic,question,sources,mode,created_at,profile) VALUES(?,?,?,?,?,?,?,?)',
+                (exercise['id'], exercise['seed_id'], q['skill'], db.dumps(q), db.dumps(exercise['sources']), exercise['mode'], now(), db.dumps(exercise['profile'])))
+    db.set_value('current_exercise', exercise['id'], con)
+
+
+def create_exercise(question, sources, mode='coach', seed_id=None):
+    exercise = _new_exercise(question, sources, mode, seed_id)
     with db.connect() as con:
-        con.execute('INSERT INTO exercises(id,seed_id,topic,question,sources,mode,created_at,profile) VALUES(?,?,?,?,?,?,?,?)',
-                    (exercise_id, seed_id, q['skill'], db.dumps(q), db.dumps(sources), mode, now(), db.dumps(learning_profile())))
-        db.set_value('current_exercise', exercise_id, con)
-    return public_exercise(get_exercise(exercise_id))
+        _insert_exercise(exercise, con)
+    return public_exercise(get_exercise(exercise['id']))
+
+
+def prepare_rubric(exercise_id, rubric, expected_version):
+    """Teacher-only: calibrate before ANY answer, with atomic version checks."""
+    if not isinstance(rubric, list) or not rubric or not all(isinstance(item, dict) for item in rubric):
+        raise ValueError('rubric须为非空评分项列表。')
+    with db.connect() as con:
+        con.execute('BEGIN IMMEDIATE')
+        row = con.execute('SELECT * FROM exercises WHERE id=?', (exercise_id,)).fetchone()
+        if not row or row['version'] != expected_version:
+            raise ValueError('练习版本已变化，请重新读取上下文。')
+        if con.execute('SELECT 1 FROM tutor_attempts WHERE exercise_id=?', (exercise_id,)).fetchone():
+            raise ValueError('已有作答，不能修改冻结量表。')
+        question = json.loads(row['question'])
+        sources = json.loads(row['sources'])
+        if question.get('rubric_status') != 'uncalibrated':
+            raise ValueError('量表已冻结为ready，不能重新标定。')
+        if question.get('subject') == '申论' and len(rubric) < 2:
+            raise ValueError('申论标定须至少两个题目特定分项。')
+        for item in rubric:
+            if item.get('requirement', '').strip() in ('按参考答案要点逐条对照：覆盖度、准确性、条理与字数', '', '意思对即可'):
+                raise ValueError('请明确题目特定要点，不能使用泛化占位量表。')
+            evidence = item.get('evidence_ids') or []
+            if any(teacher_reference(s) for s in sources if s['id'] in evidence):
+                raise ValueError('量表须引用题目材料，而非教师解析作为事实依据。')
+        candidate = _question({**question, 'rubric': rubric, 'rubric_status': 'ready'}, sources)
+        con.execute('UPDATE exercises SET question=?,version=version+1 WHERE id=?', (db.dumps(candidate), exercise_id))
+    return get_context(exercise_id)
 
 
 def start_practice(seed_id, mode='coach'):
@@ -175,11 +226,17 @@ def zhenti_paper(paper_id):
 
 
 def zhenti_start_quiz(paper_id=None, subject=None, skill=None, count=10, mode='coach'):
-    state = zhenti.start_quiz(paper_id=paper_id, subject=subject, skill=skill, count=count)
-    current = state.get('current_seed')
-    if current:
-        start_practice(current, mode)
-    return state
+    plan = zhenti.start_quiz(paper_id=paper_id, subject=subject, skill=skill, count=count, mode=mode)
+    current = plan.get('current_seed')
+    if not current:
+        raise ValueError('试卷没有可用题目。')
+    question, sources = zhenti.build_seed(current)
+    exercise = _new_exercise(question, sources, mode, current)
+    with db.connect() as con:
+        con.execute('BEGIN IMMEDIATE')
+        _insert_exercise(exercise, con)
+        zhenti.activate_quiz(plan, exercise['id'], con=con)
+    return zhenti.state()
 
 
 def zhenti_quiz_state():
@@ -187,11 +244,20 @@ def zhenti_quiz_state():
 
 
 def zhenti_next(mode='coach'):
-    state = zhenti.advance()
-    current = state.get('current_seed')
-    if current:
-        start_practice(current, mode)
-    return state
+    plan = zhenti.next_quiz_plan()
+    exercise = None
+    if plan.get('current_seed'):
+        question, sources = zhenti.build_seed(plan['current_seed'])
+        exercise = _new_exercise(question, sources, plan['mode'], plan['current_seed'])
+    with db.connect() as con:
+        con.execute('BEGIN IMMEDIATE')
+        if exercise:
+            _insert_exercise(exercise, con)
+        zhenti.commit_quiz_step(plan['quiz_id'], plan['index'], exercise['id'] if exercise else None, con=con)
+    result = zhenti.state()
+    if result.get('finished'):
+        result['report'] = zhenti.report()
+    return result
 
 
 def zhenti_quit():
@@ -244,7 +310,7 @@ def reveal(exercise_id, kind='hint'):
     return ex['question']['hint'] if kind == 'hint' else ex['question']['reference_answer']
 
 
-def submit_answer(exercise_id, answer, submission_id, expected_version):
+def submit_answer(exercise_id, answer, submission_id, expected_version, visual_confirmed=False):
     answer = str(answer).strip()
     if not answer or len(answer) > 12000 or not submission_id or len(submission_id) > 200:
         raise ValueError('答案为空、过长或提交编号无效。')
@@ -259,7 +325,11 @@ def submit_answer(exercise_id, answer, submission_id, expected_version):
             row = con.execute('SELECT * FROM exercises WHERE id=?', (exercise_id,)).fetchone()
             if not row or row['version'] != expected_version:
                 raise ValueError('页面中的练习版本已变化，请刷新后再提交。')
-            q = json.loads(row['question'])
+            q = _question(json.loads(row['question']), json.loads(row['sources']))
+            if not isinstance(visual_confirmed, bool):
+                raise ValueError('visual_confirmed须为布尔值。')
+            if q.get('visual_required') and (not q.get('visual_supported', True) or not visual_confirmed):
+                raise ValueError('本题必要图像尚未完整显示并确认，不能正常交卷。')
             if q['question_type'] == 'single_choice' and answer not in {o['id'] for o in q['options']}:
                 raise ValueError('请选择一个有效选项。')
             pending = con.execute("SELECT 1 FROM tutor_attempts WHERE exercise_id=? AND status='pending'", (exercise_id,)).fetchone()
@@ -295,6 +365,8 @@ def apply_feedback(attempt_id, feedback):
         row = con.execute('SELECT * FROM tutor_attempts WHERE id=?', (attempt_id,)).fetchone()
     if not row:
         raise ValueError('没有这次作答。')
+    if row['status'] == 'graded' and json.loads(row['feedback']) == feedback:
+        return json.loads(row['feedback'])
     ex = get_exercise(row['exercise_id'])
     result = validate_feedback(ex['question'], row['answer'], ex['sources'], feedback)
     with db.connect() as con:
@@ -305,6 +377,8 @@ def apply_feedback(attempt_id, feedback):
                 raise ValueError('本次作答已有批改，不能覆盖历史分数。')
             return result
         con.execute("UPDATE tutor_attempts SET status='graded',feedback=? WHERE id=?", (db.dumps(result), attempt_id))
+        if result['grading_status'] == 'qualitative':
+            return result
         old = con.execute('SELECT successes,due_at FROM reviews WHERE seed_id=?', (ex['seed_id'],)).fetchone()
         clean = result['score'] >= 8 and not result.get('over_word_limit') and not row['assisted'] and row['revision'] == 0
         # Immediate repetition of the same item does not establish retention.

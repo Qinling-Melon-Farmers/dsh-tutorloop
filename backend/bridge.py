@@ -26,6 +26,7 @@ def dispatch(request):
         'list_sources': lambda: [materials.source_summary(c) for c in storage.get_chunks(200)],
         'find_materials': tutor.find_materials,
         'create_practice': tutor.create_practice,
+        'prepare_rubric': tutor.prepare_rubric,
         'start_practice': tutor.start_practice,
         'get_context': tutor.get_context,
         'reveal': tutor.reveal,

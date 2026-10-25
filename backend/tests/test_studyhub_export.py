@@ -86,6 +86,37 @@ class TestStudyHubExport(unittest.TestCase):
         self.assertEqual({card['kind'] for card in deck['cards']}, {'open', 'quiz'})
         self.assertTrue(all('非官方' in card['explanation'] for card in deck['cards']))
 
+    def test_rich_questions_are_rejected_instead_of_silently_losing_images(self):
+        image = {'type': 'image', 'url': 'https://fb.fbstatic.cn/example.png'}
+        variants = [dict(QUESTION, visual_required=True)]
+        variants += [dict(QUESTION, **{field: [image]}) for field in ('stem_blocks', 'material_blocks', 'reference_blocks')]
+        variants += [dict(QUESTION, options=[{'id': 'A', 'text': '图', 'blocks': [image]}])]
+        variants += [{'question': QUESTION, 'materials': [{'blocks': [image]}]}]
+        for question in variants:
+            with self.subTest(question=question), self.assertRaisesRegex(ValueError, '不支持图文'):
+                export_studyhub_deck([question], '图文练习')
+        q = dict(QUESTION, stem_blocks=[{'type': 'text', 'text': '题干'}])
+        self.assertEqual(len(export_studyhub_deck([q], '纯文本')['cards']), 1)
+
+    def test_uncalibrated_open_question_cannot_export_numeric_rubric(self):
+        with self.assertRaisesRegex(ValueError, '尚未标定'):
+            export_studyhub_deck([dict(QUESTION, rubric_status='uncalibrated')], '定性反馈')
+
+    def test_word_limits_and_generic_course_profile_defaults(self):
+        question = dict(QUESTION, subject='English', length_unit='words')
+        deck = export_studyhub_deck([question], 'Grammar')
+        self.assertEqual(deck['course'], 'English')
+        self.assertIn('100词以内', deck['cards'][0]['prompt'])
+        self.assertNotIn('100字以内', deck['cards'][0]['prompt'])
+        neutral = export_studyhub_deck([QUESTION], '练习')
+        self.assertEqual(neutral['course'], '学习练习')
+        self.assertEqual(neutral['cards'][0]['topic'], '学习练习')
+        explicit = export_studyhub_deck([QUESTION], '练习', profile={'name': '物理基础', 'goal': '理解惯性'})
+        self.assertEqual(explicit['course'], '物理基础')
+        self.assertEqual(explicit['cards'][0]['topic'], '理解惯性')
+        wrapped = export_studyhub_deck([{'question': QUESTION, 'learning_profile': {'name': '数学'}}], '练习')
+        self.assertEqual(wrapped['course'], '数学')
+
 
 if __name__ == '__main__':
     unittest.main()
