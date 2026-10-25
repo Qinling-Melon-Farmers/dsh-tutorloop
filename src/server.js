@@ -1,14 +1,40 @@
-import { isAbsolute, resolve, relative, sep, extname } from 'node:path'
+import { isAbsolute, resolve, relative, sep, extname, join, dirname } from 'node:path'
 import { realpath } from 'node:fs/promises'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 
 export const PUBLIC_ACTIONS = new Set(['overview', 'list_sources', 'start_practice', 'student_state', 'public_state', 'reveal', 'submit_answer', 'set_profile', 'import_file', 'import_folder', 'find_materials', 'search_materials', 'fetch_material', 'method_cards', 'export_memoir', 'language_settings', 'zhenti_papers', 'zhenti_paper', 'zhenti_start_quiz', 'zhenti_quiz_state', 'zhenti_next', 'zhenti_quit', 'zhenti_report'])
 
 function key(path) { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
+
+/**
+ * Workspace trust with a per-user store of previously host-confirmed
+ * workspaces, so a DSH restart does not relock panels on workspaces the
+ * user already worked in. Only host-side touches (tool calls or session
+ * prompts) add entries; the store lives in the user's own profile
+ * directory and is equivalent to configuring workspacePath explicitly.
+ */
 export function createWorkspaceTrust(config = {}) {
   const seen = new Set()
   if (config.workspacePath) seen.add(key(config.workspacePath))
+  const store = config.trustStore ?? join(homedir(), '.dsh-tutorloop', 'trusted-workspaces.json')
+  try {
+    const saved = JSON.parse(readFileSync(store, 'utf8'))
+    if (Array.isArray(saved.workspaces)) for (const item of saved.workspaces) seen.add(item)
+  } catch { /* first run or unreadable store: start empty */ }
+  const persist = () => {
+    try {
+      mkdirSync(dirname(store), { recursive: true })
+      writeFileSync(store, JSON.stringify({ workspaces: [...seen] }))
+    } catch { /* best effort; in-memory trust still works this session */ }
+  }
   return {
-    touch(path) { if (typeof path === 'string' && isAbsolute(path)) seen.add(key(path)) },
+    touch(path) {
+      if (typeof path === 'string' && isAbsolute(path)) {
+        const item = key(path)
+        if (!seen.has(item)) { seen.add(item); persist() }
+      }
+    },
     allows(path) { return typeof path === 'string' && isAbsolute(path) && seen.has(key(path)) },
     defaultPath: config.workspacePath || process.cwd(),
   }
