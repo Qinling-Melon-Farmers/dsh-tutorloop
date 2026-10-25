@@ -1,6 +1,6 @@
 {
   "name": "dsh-tutorloop",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Evidence-grounded learning for DeepSeek Harness: guided practice, feedback and spaced review with a local learning record.",
   "type": "module",
   "engines": {

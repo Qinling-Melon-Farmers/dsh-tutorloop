@@ -1,6 +1,8 @@
 # Validation record
 
-Date: 2026-10-26. Candidate: 0.4.0. These are bounded observations, not a claim of model-independent teaching quality.
+Date: 2026-10-26. Candidate: 0.4.1 (same runtime as the locally accepted 0.4.0). These are bounded observations, not a claim of model-independent teaching quality.
+
+The 0.4.0 release stopped at Windows CI: the workspace-root test compared a resolved path with the runner's unresolved 8.3 TEMP alias. Linux passed. Version 0.4.1 canonicalizes the test expectation, preserves the failed tag and repeats release validation; this correction changes no runtime behavior.
 
 ## Automated checks
 

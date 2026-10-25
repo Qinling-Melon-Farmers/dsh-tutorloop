@@ -144,7 +144,8 @@ class ZhentiTest(unittest.TestCase):
     def test_custom_database_does_not_relocate_workspace_bank(self):
         with patch.object(storage, 'DB_PATH', self.root / 'elsewhere' / 'data' / 'custom.sqlite3'):
             self.assertEqual(len(zhenti.papers()['papers']), 2)
-            self.assertEqual(zhenti.workspace_root(), self.root / 'ws')
+            # Windows runners may provide an 8.3 TEMP alias; compare canonical paths.
+            self.assertEqual(zhenti.workspace_root(), (self.root / 'ws').resolve())
 
     def test_missing_options_or_invalid_choice_never_enter_mix_pool(self):
         file = self.root / 'ws' / '粉笔试卷' / '题目选项' / '900001.json'
