@@ -319,6 +319,26 @@ def apply_feedback(attempt_id, feedback):
     return result
 
 
+def _generated_choices(limit=10):
+    """Recently tutor-created practices for THIS workspace, reusable from the panel."""
+    with db.connect() as con:
+        rows = con.execute(
+            "SELECT seed_id, topic, question, created_at FROM exercises "
+            "WHERE seed_id LIKE 'generated:%' ORDER BY created_at DESC LIMIT 60").fetchall()
+    seen, choices = set(), []
+    for row in rows:
+        if row['seed_id'] in seen or len(choices) >= limit:
+            continue
+        seen.add(row['seed_id'])
+        try:
+            stem = json.loads(row['question']).get('stem', '')
+        except Exception:
+            stem = ''
+        choices.append({'id': row['seed_id'], 'subject': '本工作区', 'skill': row['topic'],
+                        'stem': str(stem)[:60]})
+    return choices
+
+
 def overview():
     with db.connect() as con:
         reviews = [dict(r) for r in con.execute('SELECT * FROM reviews ORDER BY due_at')]
@@ -333,7 +353,8 @@ def overview():
             'due': [r for r in reviews if r['due_at'] <= now()], 'reviews': reviews,
             'current_exercise': current,
             'seed_choices': [{'id': r['question']['id'], 'subject': r['question']['subject'],
-                              'skill': r['question']['skill'], 'stem': r['question']['stem']} for r in seeds()]}
+                              'skill': r['question']['skill'], 'stem': r['question']['stem']} for r in seeds()],
+            'workspace_choices': _generated_choices()}
 
 
 def export_memoir():

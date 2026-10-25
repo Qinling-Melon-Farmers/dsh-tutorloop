@@ -180,8 +180,27 @@ class BridgeActionsTest(unittest.TestCase):
         self.assertTrue(self.action('student_state', exercise_id=ex['id'])['attempts'][0]['feedback'])
         self.assertIn('rubric', self.action('get_context', exercise_id=ex['id'])['exercise']['question'])
 
+    def test_overview_lists_workspace_created_practices(self):
+        self.assertEqual(self.action('overview')['workspace_choices'], [])
+        material = self.workspace / 'w1.txt'
+        material.write_text('敏感指反应快且不准确，敏锐指观察力强且判断准。二者搭配对象不同。', encoding='utf-8')
+        self.action('import_file', path=str(material))
+        found = self.action('find_materials', query='敏感 敏锐 区别', limit=3)
+        source_id = found['sources'][0]['id']
+        self.action('create_practice',
+                    question={"id": "gen_w1", "subject": "英语", "skill": "词义辨析",
+                              "question_type": "short_answer", "options": [], "correct_option_id": None,
+                              "explanation": "", "difficulty": "基础",
+                              "material": "[P1] 词义辨析材料。", "stem": "辨析敏感与敏锐的差异。",
+                              "word_limit": 80, "reference_answer": "敏感侧重反应快，敏锐侧重判断准。",
+                              "rubric": [{"name": "理解", "requirement": "意思对即可", "points": 10, "evidence_ids": [source_id]}],
+                              "hint": "先看搭配。"},
+                    source_ids=[source_id])
+        choices = self.action('overview')['workspace_choices']
+        self.assertTrue(any(c['id'].startswith('generated:') and c['skill'] == '词义辨析' for c in choices))
+
     def test_method_cards_and_request_shapes(self):
-        self.assertEqual(len(self.action('method_cards')['cards']), 8)
+        self.assertEqual(len(self.action('method_cards')['cards']), 11)
         for request in ([], {'action': 'overview', 'payload': []}, {'action': 'unknown'}):
             with self.assertRaises(ValueError):
                 dispatch(request)
