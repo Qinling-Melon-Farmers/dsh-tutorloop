@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from . import storage as db
+from . import zhenti
 from .llm import _question, validate_feedback
 from .profiles import default_profile, generic_profile, exam_profile
 
@@ -148,6 +149,9 @@ def create_exercise(question, sources, mode='coach', seed_id=None):
 
 
 def start_practice(seed_id, mode='coach'):
+    if zhenti.is_zhenti(seed_id):
+        question, sources = zhenti.build_seed(seed_id)
+        return create_exercise(question, sources, mode, seed_id)
     for row in seeds():
         if row['question']['id'] == seed_id:
             return create_exercise(row['question'], row['sources'], mode, seed_id)
@@ -158,6 +162,44 @@ def start_practice(seed_id, mode='coach'):
             original = get_exercise(row['id'])
             return create_exercise(original['question'], original['sources'], mode, seed_id)
     raise ValueError('未找到这道练习。')
+
+
+# ---------- 真题库与整卷/组卷 ----------
+
+def zhenti_papers():
+    return zhenti.papers()
+
+
+def zhenti_paper(paper_id):
+    return zhenti.paper_detail(paper_id)
+
+
+def zhenti_start_quiz(paper_id=None, subject=None, skill=None, count=10, mode='coach'):
+    state = zhenti.start_quiz(paper_id=paper_id, subject=subject, skill=skill, count=count)
+    current = state.get('current_seed')
+    if current:
+        start_practice(current, mode)
+    return state
+
+
+def zhenti_quiz_state():
+    return zhenti.state()
+
+
+def zhenti_next(mode='coach'):
+    state = zhenti.advance()
+    current = state.get('current_seed')
+    if current:
+        start_practice(current, mode)
+    return state
+
+
+def zhenti_quit():
+    return zhenti.quit_quiz()
+
+
+def zhenti_report():
+    return zhenti.report()
 
 
 def attempts_for(exercise_id):

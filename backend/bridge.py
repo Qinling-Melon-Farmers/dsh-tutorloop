@@ -32,6 +32,13 @@ def dispatch(request):
         'submit_answer': tutor.submit_answer,
         'apply_feedback': tutor.apply_feedback,
         'export_memoir': tutor.export_memoir,
+        'zhenti_papers': tutor.zhenti_papers,
+        'zhenti_paper': tutor.zhenti_paper,
+        'zhenti_start_quiz': tutor.zhenti_start_quiz,
+        'zhenti_quiz_state': tutor.zhenti_quiz_state,
+        'zhenti_next': tutor.zhenti_next,
+        'zhenti_quit': tutor.zhenti_quit,
+        'zhenti_report': tutor.zhenti_report,
     }
     if action not in handlers:
         raise ValueError('未知动作。')

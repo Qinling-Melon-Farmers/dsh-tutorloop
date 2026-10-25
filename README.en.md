@@ -17,6 +17,7 @@ The learning loop is: establish a goal → inspect source material → freeze a 
 - PDF, DOCX, TXT, Markdown and HTML imports; provenance and page references; local BM25 retrieval.
 - Public web search and URL import, with extracted text distinguished from search snippets.
 - Practice pages show the original material passages with provenance; long passages collapse by default.
+- **Real-exam bank, full papers, and mixed sets**: after importing local exam solution files, the panel offers 219 vice-provincial papers (~23k items): full-paper practice with auto-graded single-choice, topic-based random sets, and an accuracy report per run.
 - Objective grading and validated rubric-based feedback; unanswered or pending subjective work is not scored as zero.
 - One-click grading handoff: submitting a written answer copies the review request and switches to chat; the panel refreshes itself once the review lands.
 - Feedback is rendered as a per-criterion score table with your original wording, missed points, and claims beyond the material.

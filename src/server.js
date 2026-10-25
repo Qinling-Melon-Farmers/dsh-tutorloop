@@ -1,7 +1,7 @@
 import { isAbsolute, resolve, relative, sep, extname } from 'node:path'
 import { realpath } from 'node:fs/promises'
 
-export const PUBLIC_ACTIONS = new Set(['overview', 'list_sources', 'start_practice', 'student_state', 'public_state', 'reveal', 'submit_answer', 'set_profile', 'import_file', 'import_folder', 'find_materials', 'search_materials', 'fetch_material', 'method_cards', 'export_memoir', 'language_settings'])
+export const PUBLIC_ACTIONS = new Set(['overview', 'list_sources', 'start_practice', 'student_state', 'public_state', 'reveal', 'submit_answer', 'set_profile', 'import_file', 'import_folder', 'find_materials', 'search_materials', 'fetch_material', 'method_cards', 'export_memoir', 'language_settings', 'zhenti_papers', 'zhenti_paper', 'zhenti_start_quiz', 'zhenti_quiz_state', 'zhenti_next', 'zhenti_quit', 'zhenti_report'])
 
 function key(path) { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
 export function createWorkspaceTrust(config = {}) {

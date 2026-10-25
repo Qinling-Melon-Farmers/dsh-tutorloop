@@ -53,6 +53,13 @@ export function TutorLoopPanel({ cwd, openChat }) {
   const [query, setQuery] = useState('')
   const [url, setUrl] = useState('')
   const [materialResult, setMaterialResult] = useState(null)
+  const [zhenti, setZhenti] = useState(null)
+  const [paperQ, setPaperQ] = useState(null)
+  const [quiz, setQuiz] = useState(null)
+  const [quizReport, setQuizReport] = useState(null)
+  const [mixSubject, setMixSubject] = useState('行测')
+  const [mixSkill, setMixSkill] = useState('')
+  const [mixCount, setMixCount] = useState(10)
   const active = useRef(true)
   const controller = useRef(null)
   const submission = useRef(null)
@@ -79,11 +86,12 @@ export function TutorLoopPanel({ cwd, openChat }) {
   }, [languageMode, language, languageReady, cwd])
 
   async function refresh(signal) {
-    const [nextOverview, nextStudent, nextSources] = await Promise.all([
+    const [nextOverview, nextStudent, nextSources, nextQuiz] = await Promise.all([
       studentAction(cwd, 'overview', {}, signal), studentAction(cwd, 'student_state', {}, signal), studentAction(cwd, 'list_sources', {}, signal),
+      studentAction(cwd, 'zhenti_quiz_state', {}, signal).catch(() => ({ active: false })),
     ])
     if (!active.current) return
-    setOverview(nextOverview); setStudent(nextStudent); setSources(items(nextSources))
+    setOverview(nextOverview); setStudent(nextStudent); setSources(items(nextSources)); setQuiz(nextQuiz)
     return { nextOverview, nextStudent }
   }
 
@@ -206,6 +214,41 @@ export function TutorLoopPanel({ cwd, openChat }) {
     })
   }
 
+  const [zhentiPaperId, setZhentiPaperId] = useState('')
+  const [zhentiQSeed, setZhentiQSeed] = useState('')
+
+  async function loadZhenti() {
+    if (zhenti) return
+    await run(async signal => {
+      const result = await studentAction(cwd, 'zhenti_papers', {}, signal)
+      if (active.current) setZhenti(result)
+    })
+  }
+
+  async function openPaperQuestions(paperId) {
+    setZhentiQSeed('')
+    if (!paperId) { setPaperQ(null); return }
+    await run(async signal => {
+      const result = await studentAction(cwd, 'zhenti_paper', { paper_id: Number(paperId) }, signal)
+      if (active.current) setPaperQ(result)
+    })
+  }
+
+  async function quizAction(action, payload = {}, done) {
+    await run(async signal => {
+      const result = await studentAction(cwd, action, payload, signal)
+      if (!active.current) return
+      setQuiz(result.finished && result.report ? { ...result, report: result.report } : result)
+      if (result.finished) setQuizReport(result.report || null)
+      if (result.finished && !result.report) {
+        const report = await studentAction(cwd, 'zhenti_report', {}, signal)
+        if (active.current) setQuizReport(report)
+      }
+      done?.(result)
+      await refresh(signal)
+    })
+  }
+
   return localize(<div className="tutorloop-panel" data-dsh-plugin="tutorloop" data-dsh-part="conversation-view" lang={language === 'zh' ? 'zh-CN' : 'en'}><div className="tutorloop-content">
     <header className="tutorloop-header"><div><h1>TutorLoop</h1><p className="tutorloop-muted">一次解决一个问题，练习后再验证。</p></div><div className="tutorloop-row"><select aria-label="Language / 语言" disabled={!languageReady || !cwd} value={languageMode} onChange={e => setLanguageMode(e.target.value)}><option value="zh">中文</option><option value="en">English</option><option value="auto">跟随 DSH</option></select><button disabled={busy || !cwd} onClick={() => run(signal => refresh(signal))}>刷新记录</button></div></header>
     {!cwd ? <div className="tutorloop-notice">请先打开一个带工作目录的会话，TutorLoop 会在该工作区保存学习记录。</div> : <>
@@ -216,6 +259,18 @@ export function TutorLoopPanel({ cwd, openChat }) {
       {busy && <p role="status" className="tutorloop-muted">正在处理…</p>}
       {tab === '练习' && <>
         <section className="tutorloop-card"><h2>开始一个小任务</h2>{choices.length ? <><label>练习<select value={seed} onChange={e => setSeed(e.target.value)}><option value="">请选择一题</option>{choices.map(item => <option key={item.id} value={item.id}>{item.subject} · {item.skill}</option>)}</select></label><label>方式<select value={mode} onChange={e => setMode(e.target.value)}><option value="coach">陪练：可提示与示范</option><option value="exam">自测：交卷后讲解</option></select></label><button className="tutorloop-primary" disabled={busy || !seed || pending} onClick={() => startPractice(seed)}>开始练习</button></> : <p>还没有练习。可以回到聊天，让 DSH 根据你的学习目标与已有资料创建一题。</p>}<p className="tutorloop-muted">内置练习以国考为主；其他主题可在聊天中请当前模型创建。自编与 AI 练习均需核对。</p></section>
+        {quiz?.active && <section className="tutorloop-card" aria-label="整卷进行中"><div className="tutorloop-row"><h2>{quiz.title || '整卷进行中'}</h2><span className="tutorloop-badge">第 {Math.min((quiz.index ?? 0) + 1, quiz.total ?? 0)} / {quiz.total} 题</span></div><div className="tutorloop-row"><button className="tutorloop-primary" disabled={busy} onClick={() => quizAction('zhenti_next')}>{quiz.finished ? '已完成' : '下一题 →'}</button><button disabled={busy} onClick={() => quizAction('zhenti_quit', {}, () => setQuiz(null))}>结束并保留记录</button><button disabled={busy} onClick={() => quizAction('zhenti_report', {}, r => setQuizReport(r))}>查看报告</button></div><p className="tutorloop-muted">逐题作答后点“下一题”；单选题提交即自动判分，主观题按一键批改流程。完成后报告给出正确率与错题清单。</p></section>}
+        {quizReport && <section className="tutorloop-card" aria-label="整卷报告"><div className="tutorloop-row"><h2>{quizReport.title}</h2><span className="tutorloop-badge">正确 {quizReport.correct}/{quizReport.answered}{quizReport.accuracy != null ? ` · ${Math.round(quizReport.accuracy * 100)}%` : ''}{quizReport.pending ? ` · 待批改 ${quizReport.pending}` : ''}</span></div>{Boolean(quizReport.items?.length) && <table className="tutorloop-table"><caption className="tutorloop-sr-only">逐题结果</caption><thead><tr><th scope="col">题号</th><th scope="col">考点</th><th scope="col">结果</th><th scope="col">你的作答</th></tr></thead><tbody>{quizReport.items.map(item => <tr key={item.seed}><td>{item.no}</td><td data-tutorloop-content>{item.skill}</td><td>{item.status === 'graded' ? (item.score >= 8 && !item.status_pending ? `✓ ${item.score}/10` : `${item.score ?? '-'}/10`) : item.status === 'pending' ? '待批改' : '未作答'}</td><td data-tutorloop-content>{String(item.answer ?? '').slice(0, 40)}</td></tr>)}</tbody></table>}<p><small>结果为教学参考；真题答案与解析来自本地已核验的机构解析文件，不代表官方评分。</small></p></section>}
+        <section className="tutorloop-card" aria-label="真题与整卷"><h2>真题与整卷</h2><div className="tutorloop-row"><button disabled={busy || !cwd} onClick={loadZhenti}>载入真题列表</button>{zhenti && <span className="tutorloop-muted">{zhenti.papers?.length ?? 0} 套卷可选</span>}</div>
+          {zhenti && <>
+            <label>试卷<select value={zhentiPaperId} disabled={busy} onChange={e => { setZhentiPaperId(e.target.value); openPaperQuestions(e.target.value) }}><option value="">请选择试卷</option>{(zhenti.papers || []).map(p => <option key={p.paper_id} value={p.paper_id}>{p.subject}·{p.kind === '真题卷' ? '真题' : '模考'}·{p.year || ''} {p.name.slice(0, 26)}（{p.count}题）</option>)}</select></label>
+            <div className="tutorloop-row"><button className="tutorloop-primary" disabled={busy || !zhentiPaperId} onClick={() => { setQuizReport(null); quizAction('zhenti_start_quiz', { paper_id: Number(zhentiPaperId) }) }}>开始整卷</button><span className="tutorloop-muted">整卷逐题作答，行测单选自动判分。</span></div>
+            {paperQ && <label>题目<select value={zhentiQSeed} disabled={busy} onChange={e => setZhentiQSeed(e.target.value)}><option value="">请选择一题（共 {paperQ.questions.length} 题）</option>{paperQ.questions.map(q => <option key={q.seed} value={q.seed}>{q.no}. {q.skill}（{q.t === 'single' ? '单选' : '主观'}）</option>)}</select></label>}
+            {zhentiQSeed && <div className="tutorloop-row"><button disabled={busy || pending} onClick={() => startPractice(zhentiQSeed)}>练习这题</button></div>}
+            <div className="tutorloop-row"><select aria-label="组卷科目" value={mixSubject} onChange={e => { setMixSubject(e.target.value); setMixSkill('') }}><option value="行测">行测</option><option value="申论">申论</option></select><select aria-label="组卷考点" value={mixSkill} onChange={e => setMixSkill(e.target.value)}><option value="">全部考点</option>{(zhenti.skills?.[mixSubject] || []).map(s => <option key={s} value={s}>{s}</option>)}</select><input aria-label="抽题数量" type="number" min="1" max="50" value={mixCount} onChange={e => setMixCount(e.target.value)} style={{ width: 72 }} /><button disabled={busy} onClick={() => { setQuizReport(null); quizAction('zhenti_start_quiz', { subject: mixSubject, skill: mixSkill || null, count: Number(mixCount) || 10 }) }}>随机开练</button></div>
+          </>}
+          <p className="tutorloop-muted">题目来自工作区已导入的真题解析文件；选项与答案已核验对齐，机构解析仅供参考。</p>
+        </section>
         {question && <section className="tutorloop-card" aria-label="当前练习"><div className="tutorloop-row"><h2>{question.skill || question.subject || '当前练习'}</h2><span className="tutorloop-badge">{exercise.mode === 'exam' ? '自测' : '陪练'}</span></div>
           <MaterialPassages materials={exercise.materials} language={language} />
           {!exercise.materials?.length && <div className="tutorloop-material">{question.material}</div>}

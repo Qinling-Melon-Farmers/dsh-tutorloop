@@ -1,5 +1,5 @@
 /** Student-only browser API. Teacher context is never requested by this panel. */
-export const STUDENT_ACTIONS = new Set(['overview', 'student_state', 'set_profile', 'language_settings', 'method_cards', 'list_sources', 'import_file', 'import_folder', 'search_materials', 'fetch_material', 'start_practice', 'submit_answer', 'reveal'])
+export const STUDENT_ACTIONS = new Set(['overview', 'student_state', 'set_profile', 'language_settings', 'method_cards', 'list_sources', 'import_file', 'import_folder', 'search_materials', 'fetch_material', 'start_practice', 'submit_answer', 'reveal', 'zhenti_papers', 'zhenti_paper', 'zhenti_start_quiz', 'zhenti_quiz_state', 'zhenti_next', 'zhenti_quit', 'zhenti_report'])
 
 export async function studentAction(cwd, action, payload = {}, signal) {
   if (!cwd) throw new Error('请先打开一个带工作目录的会话。')

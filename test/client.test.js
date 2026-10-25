@@ -43,6 +43,7 @@ test('native view mounts with session scope, student records, forms and disposes
   const cwd = 'C:/learning/英语'
   let currentExercise = null
   let currentAttempts = []
+  let quizState = { active: false }
   let opened = ''
   let savedLanguage = { language: 'zh', resolved_language: 'zh' }
   const profile = { id: 'generic', name: '英语阅读', goal: '读懂短文', daily_minutes: 30, baseline: '未诊断' }
@@ -59,6 +60,10 @@ test('native view mounts with session scope, student records, forms and disposes
       case 'list_sources': data = { items: [{ id: 'P1', title: '公开英语资料', kind: 'web_snippet_only', locator: '摘要' }] }; break
       case 'method_cards': data = { cards: [{ id: 'card1', title: '先看关系', subject: '教学整理', steps: ['先做一个判断'], example: '一条例子', pitfall: '避免泛化', next_action: '换句验证', source_note: '不是官方标准' }] }; break
       case 'start_practice': currentExercise = exercise; data = exercise; break
+      case 'zhenti_papers': data = { papers: [{ paper_id: 900001, name: '2024行测样卷', subject: '行测', kind: '真题卷', year: 2024, count: 2 }], skills: { 行测: ['政治常识'], 申论: [] } }; break
+      case 'zhenti_paper': data = { paper_id: 900001, name: '2024行测样卷', subject: '行测', kind: '真题卷', year: 2024, questions: [{ no: 1, qid: '501', seed: 'zhenti:900001:501', t: 'single', skill: '政治常识', ok: true }] }; break
+      case 'zhenti_quiz_state': data = quizState; break
+      case 'zhenti_start_quiz': currentExercise = exercise; quizState = { active: true, quiz_id: 'q', title: '整卷 · 2024行测样卷', total: 2, index: 0, current_seed: 'zhenti:900001:501', finished: false }; data = quizState; break
       case 'submit_answer': currentExercise = { ...exercise, version: 1 }; currentAttempts = [{ id: 'a1', answer: request.payload.answer, status: 'pending', assisted: 0 }]; data = { status: 'pending', attempt_id: 'a1' }; break
       default: data = {}
     }
@@ -143,6 +148,17 @@ test('native view mounts with session scope, student records, forms and disposes
     assert.match(document.body.textContent, /材料外推断/)
     assert.match(document.body.textContent, /“市场调研不足”为材料外推断/)
     assert.match(document.body.textContent, /改进后的示范答案。/)
+    // 真题与整卷:载入列表→选卷→浏览题目→开始整卷
+    await flush(() => button('载入真题列表').click())
+    assert.match(document.body.textContent, /真题与整卷/)
+    assert.match(document.body.textContent, /1 套卷可选/)
+    const paperSelect = document.querySelector('section[aria-label="真题与整卷"] label select')
+    await flush(() => { paperSelect.value = '900001'; paperSelect.dispatchEvent(new window.Event('change', { bubbles: true })) })
+    assert.match(document.body.textContent, /政治常识/)
+    await flush(() => button('开始整卷').click())
+    assert.match(document.body.textContent, /整卷 · 2024行测样卷/)
+    assert.match(document.body.textContent, /第 1 \/ 2 题/)
+    assert.ok(requests.some(request => request.action === 'zhenti_start_quiz'))
     const language = document.querySelector('select[aria-label="Language / 语言"]')
     await flush(() => { language.value = 'en'; language.dispatchEvent(new window.Event('change', { bubbles: true })) })
     assert.match(document.body.textContent, /Criteria scores/)
