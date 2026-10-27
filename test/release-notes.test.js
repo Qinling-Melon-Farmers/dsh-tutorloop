@@ -136,7 +136,7 @@ test('CLI reads the tag snapshot rather than the working tree and fails without 
 });
 
 test('publish validates notes before npm operations and preserves existing Releases and assets', () => {
-  const workflow = readFileSync(new URL('../.github/workflows/publish.yml', import.meta.url), 'utf8');
+  const workflow = readFileSync(new URL('../.github/workflows/publish.yml', import.meta.url), 'utf8').replace(/\r\n?/g, '\n');
   const prepare = workflow.indexOf('run: node scripts/release-notes.mjs > "$RUNNER_TEMP/tutorloop-release-notes.md"');
   assert.ok(prepare > workflow.indexOf('run: node scripts/release.mjs check'));
   assert.ok(prepare < workflow.indexOf('run: node scripts/release.mjs probe'));
