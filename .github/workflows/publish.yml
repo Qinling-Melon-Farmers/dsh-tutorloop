@@ -43,6 +43,9 @@ jobs:
       - name: Verify tag, version and main ancestry
         id: release
         run: node scripts/release.mjs check
+      - name: Validate bilingual changelog and prepare Release notes from the tag
+        shell: bash
+        run: node scripts/release-notes.mjs > "$RUNNER_TEMP/tutorloop-release-notes.md"
       - name: Check whether this npm version already exists
         id: registry
         run: node scripts/release.mjs probe
@@ -66,7 +69,6 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
           PRERELEASE: ${{ steps.release.outputs.prerelease }}
           RELEASE_ASSET: ${{ steps.asset.outputs.asset }}
         shell: bash
@@ -75,16 +77,9 @@ jobs:
             echo "GitHub Release $RELEASE_TAG already exists; leaving it unchanged."
             exit 0
           fi
-          node --input-type=module <<'NODE'
-          import { writeFileSync } from 'node:fs';
-          import { join } from 'node:path';
-          const version = process.env.RELEASE_VERSION;
-          const notes = `TutorLoop 学习陪练 / guided learning for DeepSeek Harness.\n\n[npm ${version}](https://www.npmjs.com/package/dsh-tutorloop/v/${version}) · [使用说明 / Guide](https://github.com/${process.env.GITHUB_REPOSITORY}/tree/${process.env.RELEASE_TAG}#readme)\n\n\`\`\`sh\ndsh plugin --profile web add dsh-tutorloop@${version}\nnpx --yes --package=dsh-tutorloop@${version} dsh-tutorloop setup\n\`\`\`\n\n需要 / Requires: DSH 0.2.1-rc.2, Node 22.19+ or 24+, Python 3.11+.\n\n附件直接下载自 npm，已核对 SHA512；与 npm 安装内容一致。\nThe attached tarball is downloaded from npm and verified against its SHA512 integrity.\n`;
-          writeFileSync(join(process.env.RUNNER_TEMP, 'tutorloop-release-notes.md'), notes);
-          NODE
           flags=(--latest)
           if [[ "$PRERELEASE" == 'true' ]]; then
-            flags=(--prerelease --latest=false)
+            flags=(--prerelease "--latest=false")
           fi
           gh release create "$RELEASE_TAG" "$RELEASE_ASSET" \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
