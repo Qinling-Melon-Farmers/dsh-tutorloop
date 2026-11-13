@@ -5,9 +5,38 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { createBridge } from '../src/bridge-client.js'
 import { createTools } from '../src/index.js'
 import { createActionRoute, createWorkspaceTrust } from '../src/server.js'
+
+test('large PDF crosses the real HTTP and Python import pipeline without a 20 MiB cap', { skip: !process.env.TUTORLOOP_TEST_PYTHON && process.env.TUTORLOOP_E2E !== '1' }, async () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'tutorloop-large-http-'))
+  const config = { pythonPath: process.env.TUTORLOOP_TEST_PYTHON ?? 'python', workspacePath: workspace, trustStore: join(workspace, 'trust.json') }
+  const server = createServer(createActionRoute(createBridge(config), createWorkspaceTrust(config)).handler)
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  const base = `http://127.0.0.1:${server.address().port}`
+  const call = async (action, payload = {}) => {
+    const response = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: JSON.stringify({ action, payload, cwd: workspace }) })
+    return { status: response.status, ...await response.json() }
+  }
+  try {
+    const backend = fileURLToPath(new URL('../backend', import.meta.url))
+    execFileSync(config.pythonPath, ['-X', 'utf8', '-c', 'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); sys.path.insert(0, sys.argv[1]+"/tests"); from test_import_limits import write_pdf; write_pdf(Path(sys.argv[2]),21*1024*1024+1)', backend, join(workspace, 'large.pdf')], { windowsHide: true })
+    const imported = await call('import_file', { path: 'large.pdf' })
+    assert.equal(imported.status, 200, JSON.stringify(imported))
+    assert.ok(imported.data.added_chunks > 0)
+    const overview = await call('overview')
+    assert.ok(overview.data.sources > 0)
+    const unsupported = await call('import_file', { path: 'unsupported.csv' })
+    assert.equal(unsupported.status, 400)
+    assert.equal((await call('overview')).data.sources, overview.data.sources)
+  } finally {
+    server.closeAllConnections(); await new Promise(resolve => server.close(resolve))
+    rmSync(workspace, { recursive: true, force: true })
+  }
+})
 
 test('bundled backend: generic teaching, student privacy and workspace isolation', { skip: !process.env.TUTORLOOP_TEST_PYTHON && process.env.TUTORLOOP_E2E !== '1' }, async () => {
   const temp = mkdtempSync(join(tmpdir(), 'tutorloop-e2e-'))

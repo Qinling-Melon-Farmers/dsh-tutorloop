@@ -94,7 +94,7 @@ dsh plugin --profile web add dsh-tutorloop@${version}
 npx --yes --package=dsh-tutorloop@${version} dsh-tutorloop setup
 \`\`\`
 
-需要 / Requires: DSH 0.2.1-rc.2, Node 22.19+ or 24+, Python 3.11+.
+需要 / Requires: DSH 0.2.1-rc.2 / 0.2.2-rc.1–rc.3; Node 24.9+ for DSH rc3; Python 3.11+.
 
 附件直接下载自 npm，已核对 SHA512；与 npm 安装内容一致。
 The attached tarball is downloaded from npm and verified against its SHA512 integrity.

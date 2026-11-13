@@ -124,7 +124,7 @@ async function localImportPath(payload, cwd, folder) {
   const path = await realpath(resolve(cwd, payload.path))
   const rel = relative(root, path)
   if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw fail(403, '只能导入当前工作区内的资料。')
-  if (!folder && !new Set(['.pdf', '.docx', '.txt', '.md', '.csv', '.html', '.htm']).has(extname(path).toLowerCase())) throw fail(400, '不支持此资料文件类型。')
+  if (!folder && !new Set(['.pdf', '.docx', '.txt', '.md', '.html', '.htm']).has(extname(path).toLowerCase())) throw fail(400, '不支持此资料文件类型。')
   return { ...payload, path }
 }
 

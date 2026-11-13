@@ -21,7 +21,7 @@ class TestSources(unittest.TestCase):
         self.assertNotIn('秘密脚本', rows[0]['text'])
 
     def test_file_size_limit(self):
-        with self.assertRaisesRegex(ValueError, '20 MB'):
+        with self.assertRaisesRegex(ValueError, '100 MiB'):
             parse_upload('large.txt', b'a' * (MAX_UPLOAD_BYTES + 1))
 
     def test_empty_scanned_pdf_reports_ocr(self):

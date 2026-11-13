@@ -2,13 +2,26 @@
 from __future__ import annotations
 import hashlib
 import io
+import os
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+MAX_DOCX_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
 MAX_TEXT_CHARS = 2_000_000
 MAX_PDF_PAGES = 500
+
+
+def read_upload(path: Path) -> bytes:
+    """Reject oversized files early, and bound reads if a file grows after stat."""
+    with path.open('rb') as stream:
+        if os.fstat(stream.fileno()).st_size > MAX_UPLOAD_BYTES:
+            raise ValueError('文件超过100 MiB限制，请拆分后导入')
+        data = stream.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise ValueError('文件超过100 MiB限制，请拆分后导入')
+    return data
 
 
 class _ArticleParser(HTMLParser):
@@ -67,7 +80,7 @@ def split_chunks(text: str, title: str, locator: str = "", url: str = "", kind: 
 
 def parse_upload(filename: str, data: bytes) -> list[dict]:
     if len(data) > MAX_UPLOAD_BYTES:
-        raise ValueError("文件超过20 MB限制，请按章节拆分后导入")
+        raise ValueError("文件超过100 MiB限制，请按章节拆分后导入")
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf":
         from pypdf import PdfReader
@@ -87,8 +100,8 @@ def parse_upload(filename: str, data: bytes) -> list[dict]:
         return parts
     if suffix == ".docx":
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            if sum(item.file_size for item in archive.infolist()) > 80 * 1024 * 1024:
-                raise ValueError("DOCX解压体积超过80 MB，请拆分文件")
+            if sum(item.file_size for item in archive.infolist()) > MAX_DOCX_UNCOMPRESSED_BYTES:
+                raise ValueError("DOCX解压体积超过200 MiB，请拆分文件")
         from docx import Document
         doc = Document(io.BytesIO(data))
         paragraphs = [p.text for p in doc.paragraphs]

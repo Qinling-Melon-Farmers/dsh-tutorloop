@@ -6,6 +6,7 @@ export function detectLanguage(doc = globalThis.document) {
 }
 
 const english = {
+  '支持 PDF、DOCX、TXT、Markdown、HTML，单文件最多 100 MiB。PDF 最多 500 页，提取文本最多 200 万字符。扫描件、图形与复杂表格需要回看原件，机构解析不是官方答案。': 'PDF, DOCX, TXT, Markdown and HTML: up to 100 MiB per file, 500 PDF pages and 2 million extracted characters. Check scans, figures and complex tables against the original; third-party explanations are not official answers.',
   '定性反馈：本题尚无确认的分项量表，不计数值成绩。': 'Qualitative feedback: no confirmed rubric yet, so no numerical score is assigned.',
   '定性反馈': 'Qualitative feedback', '材料依据：': 'Source evidence: ',
   '这里仅展示已指定的学生材料，教师参考资料单独保存。': 'Only designated student materials are shown here. Teacher references are kept separately.',

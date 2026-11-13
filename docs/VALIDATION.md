@@ -1,5 +1,15 @@
 # Validation record
 
+## 0.5.0 — 2026-11-13
+
+- 116 Python tests passed with Pydantic 2.14.2, pypdf 6.21.4 and ddgs 9.16.1. Synthetic files cover a 21 MiB PDF, exactly 100 MiB, one byte over, folder import, corrupt input and the 200 MiB DOCX decompression bound. Failure cases leave the test database unchanged.
+- 46 Node tests passed with zero skips, including the real HTTP → Node → Python path for a 21 MiB PDF, teacher/student isolation, workspace switching, origin checks, native-slot lifecycle, announcement persistence and compatibility-aware version checks. Eight automation tests and the 39-file npm allowlist passed.
+- An isolated official DSH `0.2.2-rc.3` host loaded the built plugin in the local Edge browser. The left entry, native plugin icon/metadata and configuration navigation worked. A 21 MiB synthetic PDF imported through the actual panel. Chinese/English switching preserved material content. No model inference or production profile was used in this round.
+- The local Python environment supplied the three updated packages directly and reused previously installed unchanged dependencies; release CI installs the requirements afresh on Windows and Ubuntu. Local Node/Python integration used a task-local temporary directory because the machine's default TEMP denied child-process writes.
+- These checks cover import and UI behavior, not subjective teaching quality. The previous version's installed-desktop/model observations below remain historical evidence; this round does not claim a fresh model evaluation or native desktop executable test.
+
+## Historical 0.4.1 validation
+
 Date: 2026-10-26. Candidate: 0.4.1 (same runtime as the locally accepted 0.4.0). These are bounded observations, not a claim of model-independent teaching quality.
 
 The 0.4.0 release stopped at Windows CI: the workspace-root test compared a resolved path with the runner's unresolved 8.3 TEMP alias. Linux passed. Version 0.4.1 canonicalizes the test expectation, preserves the failed tag and repeats release validation; this correction changes no runtime behavior.

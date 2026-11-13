@@ -75,17 +75,21 @@ test('native view mounts with session scope, student records, forms and disposes
     await build({ entryPoints: [join(repo, 'src/client/index.jsx')], outfile: output, bundle: true, format: 'esm', platform: 'browser', jsx: 'automatic', external: ['react', 'react/jsx-runtime'] })
     const client = await import(pathToFileURL(output).href)
     let registration, render, disposed = 0
+    const registered = new Map()
     const ctx = {
       effect(callback) { cleanups.push(callback()) },
+      inject() { return { dispose() {} } },
       slots: {
-        inject(name, callback) { assert.equal(name, 'conversation.view'); const off = callback(); return () => { disposed++; off?.() } },
-        register(meta, callback) { registration = meta; render = callback; return () => { disposed++ } },
+        inject(name, callback) { const off = callback(); return () => { disposed++; off?.() } },
+        register(meta, callback) { registered.set(meta.name, { meta, render: callback }); if (meta.name === 'conversation.view') { registration = meta; render = callback } return () => { disposed++; registered.delete(meta.name) } },
       },
     }
     client.apply(ctx)
-    assert.deepEqual(client.inject, ['slots'])
+    assert.deepEqual(client.inject, ['slots', 'layout'])
     assert.equal(registration.id, 'tutorloop')
     assert.equal(registration.label(), 'TutorLoop')
+    assert.equal(registered.get('sidebar.panellist').meta.id, registered.get('main').meta.key)
+    assert.equal(registered.get('plugins.bundle.config').meta.key, 'dsh-tutorloop')
     const { createRoot } = await import('react-dom/client')
     root = createRoot(document.getElementById('root'))
     const flush = async callback => { await act(async () => { callback?.(); await new Promise(resolve => setTimeout(resolve, 0)) }) }
@@ -96,6 +100,10 @@ test('native view mounts with session scope, student records, forms and disposes
     assert.match(document.body.textContent, /英语阅读/)
     assert.equal(document.querySelector('option[value="unrelated-exam"]'), null)
     assert.match(document.body.textContent, /刷新记录/)
+    assert.match(document.querySelector('.tutorloop-about').textContent, /GitHub/)
+    assert.match(document.querySelector('aside').textContent, /100 MiB/)
+    await flush(() => button('知道了').click())
+    assert.equal(document.querySelector('aside'), null)
     assert.equal(document.querySelector('select[aria-label="Language / 语言"]').value, 'zh')
     assert.ok(requests.every(request => request.cwd === cwd))
     assert.equal(document.querySelectorAll('style[data-tutorloop-style]').length, 1)
@@ -185,6 +193,7 @@ test('native view mounts with session scope, student records, forms and disposes
     await flush(() => root.unmount()); root = null
     root = createRoot(document.getElementById('root'))
     await flush(() => root.render(React.createElement(client.TutorLoopPanel, { cwd, openChat: () => {} })))
+    assert.equal(document.querySelector('aside'), null, 'dismissal persists when reopening the panel')
     assert.match(document.body.textContent, /Refresh/)
     assert.equal(document.querySelector('select[aria-label="Language / 语言"]').value, 'en')
     const savedSelector = document.querySelector('select[aria-label="Language / 语言"]')
@@ -241,7 +250,8 @@ test('native view mounts with session scope, student records, forms and disposes
     assert.equal(requests.length, afterUnmount)
     cleanups.reverse().forEach(cleanup => cleanup?.())
     assert.equal(document.querySelectorAll('style[data-tutorloop-style]').length, 0)
-    assert.equal(disposed, 2)
+    assert.equal(disposed, 8)
+    assert.equal(registered.size, 0)
   } finally {
     if (root) await act(async () => root.unmount())
     for (const [key, descriptor] of Object.entries(old)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] }

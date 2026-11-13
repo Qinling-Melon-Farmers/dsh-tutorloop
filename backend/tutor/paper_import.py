@@ -9,7 +9,7 @@ import re
 import unicodedata
 
 from . import storage as db
-from .ingestion import MAX_UPLOAD_BYTES, MAX_PDF_PAGES, MAX_TEXT_CHARS, split_chunks
+from .ingestion import MAX_PDF_PAGES, MAX_TEXT_CHARS, read_upload, split_chunks
 
 MANIFEST_KEY = 'paper_manifest_v1'
 MAX_SCAN_FILES = 300
@@ -47,10 +47,7 @@ def inspect_pdf(path: str | Path) -> dict:
     path = Path(path).resolve()
     if path.suffix.lower() != '.pdf' or not path.is_file():
         raise ValueError('请选择已有PDF文件')
-    with path.open('rb') as stream:
-        raw = stream.read(MAX_UPLOAD_BYTES + 1)
-    if len(raw) > MAX_UPLOAD_BYTES:
-        raise ValueError('文件超过20 MB限制，请拆分')
+    raw = read_upload(path)
     digest = hashlib.sha256(raw).hexdigest()
     reader = PdfReader(io.BytesIO(raw))
     if reader.is_encrypted:

@@ -1,6 +1,6 @@
 {
   "name": "dsh-tutorloop",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Evidence-grounded learning for DeepSeek Harness: guided practice, feedback and spaced review with a local learning record.",
   "type": "module",
   "engines": {
@@ -10,7 +10,8 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "bin": {
     "dsh-tutorloop": "./scripts/cli.mjs"
@@ -30,7 +31,9 @@
     "README.md",
     "README.en.md",
     "docs/*.md",
-    "LICENSE"
+    "LICENSE",
+    "icon.svg",
+    "locale/*.json"
   ],
   "scripts": {
     "build": "node build.mjs",
@@ -43,7 +46,7 @@
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+      "dsh": ">=0.2.1-rc.2 <0.3.0-0 || >=0.2.2-rc.1 <0.2.2"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -86,5 +89,6 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "icon": "icon.svg"
 }

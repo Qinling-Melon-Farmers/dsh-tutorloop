@@ -4,6 +4,26 @@
 
 This file records user-facing changes checked against git tags and history, with npm publication status checked against the [public registry](https://registry.npmjs.org/dsh-tutorloop). Dates use Asia/Shanghai (UTC+8). See [Releases](https://github.com/Qinling-Melon-Farmers/dsh-tutorloop/releases) for the full history.
 
+## 0.5.0（2026-11-13）
+
+### 中文
+
+- 适配 DSH `0.2.2-rc.3`，显式覆盖 `0.2.2` 预发布范围并保留 `0.2.1-rc.2` 支持；使用公开 slot、导航和插件版本接口。
+- 本地文件与文件夹导入统一提升至单文件 **100 MiB**。读取前检查大小并限制实际读取量；保留 500 页 PDF、200 万提取字符限制，DOCX 解压总量上限为 200 MiB。超限或损坏文件明确报错，不将失败内容写入学习库。
+- 新增左侧 TutorLoop 原生面板入口，跟随当前主会话的工作区；保留会话页签。面板顶部显示项目仓库、当前版本、更新日志及每版本可关闭的首次公告。
+- 原生插件页新增独立图标、中英名称与简介，以及打开学习面板入口。更新检查复用 DSH 官方兼容性结果，只提示稳定版本；不兼容、离线和无法确认的状态分别提示，安装仍由原生管理器确认。
+- 合入依赖更新 #5：Pydantic 2.14.2、pypdf 6.21.4、ddgs 9.16.1。移除 HTTP 导入接口曾误接受但后端不支持的 CSV 扩展名。
+- 学习记录格式不变，无需迁移；未加入 OCR，也不会将教师参考答案展示给学生。
+
+### English
+
+- Adapt to DSH `0.2.2-rc.3`, explicitly include the `0.2.2` prerelease series and retain `0.2.1-rc.2` support. Use public slots, navigation and plugin-version APIs.
+- Raise local file and folder import limits to **100 MiB per file**, checking size before reading and bounding actual reads. Retain the 500-page PDF and 2-million-character limits; cap total uncompressed DOCX content at 200 MiB. Reject oversized or corrupt files without adding failed content to the learning database.
+- Add a native left-side TutorLoop panel following the main conversation's workspace, alongside the conversation tab. Keep repository, installed version and release links at the top, with a dismissible first-open announcement for each version.
+- Add a dedicated icon, bilingual metadata and learning-panel navigation to native Plugins. Reuse DSH compatibility checks for stable-update notices, distinguish incompatible and unconfirmed states, and leave installation confirmation to the native manager.
+- Merge dependency update #5: Pydantic 2.14.2, pypdf 6.21.4 and ddgs 9.16.1. Reject CSV at the HTTP boundary, matching the backend's supported formats.
+- Existing learning records require no migration. No OCR is added, and teacher references remain separate from student material.
+
 ## 0.4.1（2026-10-26）
 
 ### 中文

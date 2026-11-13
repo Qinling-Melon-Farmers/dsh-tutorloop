@@ -6,7 +6,7 @@ from pathlib import Path
 import unicodedata
 
 from . import storage as db
-from .ingestion import parse_upload, MAX_UPLOAD_BYTES
+from .ingestion import parse_upload, read_upload
 from . import paper_import, retrieval
 
 
@@ -64,10 +64,7 @@ def import_file(path):
         return _paper_result(paper_import.import_file(target))
     if target.suffix.lower() not in {'.txt', '.md', '.docx', '.html', '.htm'}:
         raise ValueError('支持PDF、TXT、MD、DOCX、HTML资料。')
-    with target.open('rb') as stream:
-        raw = stream.read(MAX_UPLOAD_BYTES + 1)
-    if len(raw) > MAX_UPLOAD_BYTES:
-        raise ValueError('文件超过20 MB限制，请拆分。')
+    raw = read_upload(target)
     digest = hashlib.sha256(raw).hexdigest()
     manifest = db.get_value('material_manifest_v1', {'documents': {}})
     if digest in manifest['documents']:

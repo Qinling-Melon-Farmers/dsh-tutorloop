@@ -14,7 +14,7 @@ The **current DSH session model** teaches, writes questions, and reviews written
 
 ## Installation
 
-Requires DSH `0.2.1-rc.2`, Node `22.19+ / 24+`, and Python `3.11+`. Install the official npm package; the npm badge above shows the available version.
+Supports DSH `0.2.1-rc.2` and `0.2.2-rc.1–rc.3`; meet the host's own Node requirement (DSH rc3 requires `24.9+`). The plugin needs Python `3.11+`. Install the official npm package; the npm badge above shows the available version.
 
 ```bash
 dsh plugin --profile web add dsh-tutorloop
@@ -23,6 +23,15 @@ npx --yes --package=dsh-tutorloop dsh-tutorloop doctor
 ```
 
 The first command targets the web profile. For desktop, install the same npm package `dsh-tutorloop` through that host's plugin manager. Use the profile you actually launch, reload as required, and open **TutorLoop** in a conversation with a working directory. Chinese is the default; English and follow-DSH modes are available. Materials retain their original language.
+
+## Navigation and updates
+
+![TutorLoop sidebar entry, update notices and material import (Chinese UI)](./picture/materials-0.5.0.png)
+
+- Open **TutorLoop** from the left global-panel rail or its conversation tab. The left entry follows the main conversation's workspace; select a conversation first when no workspace is identified.
+- Version, GitHub and release-note links stay at the top. A dismissible announcement appears when opening a new version; its dismissal is saved in the current browser or desktop window's local storage.
+- The native Plugins page shows a dedicated icon, bilingual metadata and an **Open learning panel** button. Goals, materials and language remain workspace-scoped.
+- Update notices use DSH's version and compatibility checks and only advertise stable releases. Incompatible releases prompt you to check the host version. Installation and confirmation remain in the native manager; nothing updates automatically. Offline, source-installed or unconfirmed states are shown as unknown.
 
 ## First session
 
@@ -39,6 +48,7 @@ For example: “Import `materials/lesson.pdf`, check my prior knowledge, and gui
 
 | Capability | Behavior |
 | --- | --- |
+| Local imports | PDF, DOCX, TXT, Markdown and HTML, up to **100 MiB per file**, with folder imports. Limits remain 500 PDF pages, 2 million extracted characters and 200 MiB total uncompressed DOCX content. No built-in OCR |
 | Evidence-based feedback | Validates material IDs and original-answer spans; the model's interpretation still needs review |
 | Student/teacher separation | Student views hide reference answers, reference blocks, rubrics, and teacher sources; unknown legacy sources stay hidden while old question material remains readable |
 | Uncalibrated rubrics | `uncalibrated` feedback has null criterion points, total score, and maximum score; it does not advance mastery or count toward numerical accuracy |

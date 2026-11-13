@@ -3,13 +3,28 @@ import { studentAction, items, value } from './api.js'
 import { mountStyles } from './styles.js'
 import { detectLanguage, localize } from './i18n.js'
 import { RichContent, imageRequirements } from './rich-content.jsx'
+import { PluginAbout, ReleaseNotice, TutorLoopIcon, useShellLanguage, VERSION } from './about.jsx'
+import { createUpdateStatus, mainWorkspaceCwd } from './plugin-info.js'
 
-export const inject = ['slots']
+export const inject = ['slots', 'layout']
 
-export function ConversationTutorLoop({ sessionId, useSessions, viewRequest, completeViewRequest, openView }) {
+export function ConversationTutorLoop({ sessionId, useSessions, viewRequest, completeViewRequest, openView, status, openSettings }) {
   const cwd = useSessions(snapshot => snapshot.byId[sessionId]?.cwd ?? '')
   useEffect(() => { if (viewRequest?.view === 'tutorloop') completeViewRequest?.() }, [viewRequest, completeViewRequest])
-  return <TutorLoopPanel key={cwd} cwd={cwd} openChat={() => openView?.('chat', '')} />
+  return <TutorLoopPanel key={cwd} cwd={cwd} openChat={() => openView?.('chat', '')} status={status} openSettings={openSettings} />
+}
+
+function MainTutorLoop({ useSessions, status, ctx, openSettings }) {
+  const cwd = useSessions(mainWorkspaceCwd)
+  return <TutorLoopPanel key={cwd} cwd={cwd} status={status} openChat={() => ctx.layout.selectPanel('conversation')} openSettings={openSettings} />
+}
+
+function BundleSettings({ status, ctx }) {
+  const language = useShellLanguage()
+  return <div className="tutorloop-panel tutorloop-settings"><PluginAbout language={language} status={status} />
+    <p>{language === 'zh' ? '学习目标、资料与语言设置随工作区保存。先打开目标工作区的会话，再进入学习面板。' : 'Goals, materials and language settings belong to each workspace. Open a conversation in your intended workspace before entering the learning panel.'}</p>
+    <button onClick={() => ctx.layout?.selectPanel('tutorloop')}>{language === 'zh' ? '打开学习面板' : 'Open learning panel'}</button>
+  </div>
 }
 
 function Feedback({ feedback, language }) {
@@ -60,7 +75,7 @@ function PaperReport({ report, language, busy, onOpenExercise }) {
   </section>, language)
 }
 
-export function TutorLoopPanel({ cwd, openChat }) {
+export function TutorLoopPanel({ cwd, openChat, status, openSettings }) {
   const [languageMode, setLanguageMode] = useState('zh')
   const [hostLanguage, setHostLanguage] = useState(detectLanguage)
   const [languageReady, setLanguageReady] = useState(false)
@@ -308,8 +323,10 @@ export function TutorLoopPanel({ cwd, openChat }) {
     await run(signal => refresh(signal, exerciseId))
   }
 
-  return localize(<div className="tutorloop-panel" data-dsh-plugin="tutorloop" data-dsh-part="conversation-view" lang={language === 'zh' ? 'zh-CN' : 'en'}><div className="tutorloop-content">
+  return localize(<div className="tutorloop-panel" data-dsh-plugin="tutorloop" data-dsh-part="conversation-view" data-conversation-composer-overlay="" lang={language === 'zh' ? 'zh-CN' : 'en'}><div className="tutorloop-content">
     <header className="tutorloop-header"><div><h1>TutorLoop</h1><p className="tutorloop-muted">一次解决一个问题，练习后再验证。</p></div><div className="tutorloop-row"><select aria-label="Language / 语言" disabled={!languageReady || !cwd} value={languageMode} onChange={e => setLanguageMode(e.target.value)}><option value="zh">中文</option><option value="en">English</option><option value="auto">跟随 DSH</option></select><button disabled={busy || !cwd} onClick={() => run(signal => refresh(signal))}>刷新记录</button></div></header>
+    <PluginAbout language={language} status={status} openSettings={openSettings} />
+    <ReleaseNotice language={language} />
     {!cwd ? <div className="tutorloop-notice">请先打开一个带工作目录的会话，TutorLoop 会在该工作区保存学习记录。</div> : <>
       {profile && <div className="tutorloop-row"><strong data-tutorloop-content>{profile.name}</strong><span data-tutorloop-content>{profile.goal}</span><span className="tutorloop-badge">每天 {profile.daily_minutes} 分钟</span><span className="tutorloop-badge">{overview?.attempts ?? 0} 次记录 · {overview?.sources ?? 0} 个资料片段</span></div>}
       {error && <div role="alert" className="tutorloop-error"><p>{error}</p><details><summary>首次使用与运行帮助</summary><p>只需初始化一次运行环境，然后刷新或重启 DSH。无需启动 Streamlit，也不必另配模型密钥或强制填写 Python 路径。</p><p>初始化：<code>dsh-tutorloop setup</code></p><p>源码目录也可运行：<code>node scripts/cli.mjs setup</code></p><p>如果工作区尚未确认，请先在当前会话发送一条聊天消息，再刷新面板。</p></details></div>}
@@ -360,7 +377,7 @@ export function TutorLoopPanel({ cwd, openChat }) {
       </>}
       {tab === '目标' && <section className="tutorloop-card"><h2>你的学习目标</h2><form onSubmit={saveProfile}><label>学习名称<input required value={profileDraft.name} onChange={e => setProfileDraft({ ...profileDraft, name: e.target.value })} placeholder="如：英语阅读、国考、编程基础" /></label><label>具体目标<input required value={profileDraft.goal} onChange={e => setProfileDraft({ ...profileDraft, goal: e.target.value })} /></label><label>每天可学习的分钟数<input type="number" min="1" max="1440" required value={profileDraft.daily_minutes} onChange={e => setProfileDraft({ ...profileDraft, daily_minutes: e.target.value })} /></label><label>已有基础<textarea value={profileDraft.baseline || ''} onChange={e => setProfileDraft({ ...profileDraft, baseline: e.target.value })} /></label><div className="tutorloop-row"><button disabled={busy} type="submit">保存通用目标</button><button disabled={busy} type="button" onClick={() => saveProfile(null, 'gongkao')}>使用国考副省级预设</button></div></form><p className="tutorloop-muted">TutorLoop 按你提供的基础和实际作答调整教学，不默认年级或能力。</p></section>}
       {tab === '资料' && <>
-        <section className="tutorloop-card"><h2>导入本地资料</h2><label>当前工作区内的文件或文件夹路径<input value={path} onChange={e => setPath(e.target.value)} placeholder="如：materials/lesson.pdf" /></label><div className="tutorloop-row"><button disabled={busy || !path.trim()} onClick={() => materialAction('import_file', { path })}>导入文件</button><button disabled={busy || !path.trim()} onClick={() => materialAction('import_folder', { path })}>导入文件夹</button></div><p className="tutorloop-muted">支持的文件由本地导入器检查。扫描件、图形与复杂表格需要回看原件，机构解析不是官方答案。</p></section>
+        <section className="tutorloop-card"><h2>导入本地资料</h2><label>当前工作区内的文件或文件夹路径<input value={path} onChange={e => setPath(e.target.value)} placeholder="如：materials/lesson.pdf" /></label><div className="tutorloop-row"><button disabled={busy || !path.trim()} onClick={() => materialAction('import_file', { path })}>导入文件</button><button disabled={busy || !path.trim()} onClick={() => materialAction('import_folder', { path })}>导入文件夹</button></div><p className="tutorloop-muted">支持 PDF、DOCX、TXT、Markdown、HTML，单文件最多 100 MiB。PDF 最多 500 页，提取文本最多 200 万字符。扫描件、图形与复杂表格需要回看原件，机构解析不是官方答案。</p></section>
         <section className="tutorloop-card"><h2>查找公开资料</h2><form onSubmit={e => { e.preventDefault(); materialAction('search_materials', { query, limit: 3 }) }}><label>搜索词<input value={query} onChange={e => setQuery(e.target.value)} /></label><button disabled={busy || !query.trim()}>搜索并收录</button></form><form onSubmit={e => { e.preventDefault(); materialAction('fetch_material', { url }) }}><label>原文 URL<input type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…" /></label><button disabled={busy || !url.trim()}>读取网页</button></form><p className="tutorloop-muted">搜索摘要与网页全文会分别标记，无法抓取时不补造正文。</p></section>
         {materialResult && <section className="tutorloop-card"><h3>本次处理</h3>{(materialResult.errors || []).map((item, i) => <p key={`error-${i}`}>{typeof item === 'string' ? item : item.message || item.error || '部分资料未导入，请检查文件。'}</p>)}{(materialResult.statuses || []).map((item, i) => <p key={`status-${i}`}>{typeof item === 'string' ? item : item.message || item.status}</p>)}</section>}
         <section className="tutorloop-card"><h2>已收录来源 · {overview?.sources ?? sources.length}</h2>{sources.length ? sources.map((source, index) => <article key={`${source.id}-${index}`}><h3>{source.title || '未命名来源'}</h3><p><small>{source.locator} · {source.kind === 'web_snippet_only' ? '搜索摘要，非全文' : source.kind === 'synthetic_case' ? '自编材料' : source.kind === 'web_fulltext' ? '网页全文' : '本地材料'}</small></p>{source.url && /^https?:\/\//i.test(source.url) && <a href={source.url} target="_blank" rel="noreferrer">查看原始来源</a>}</article>) : <p className="tutorloop-muted">还没有收录资料。导入一份与你的目标相关的材料，再回聊天开始学习。</p>}</section>
@@ -371,9 +388,35 @@ export function TutorLoopPanel({ cwd, openChat }) {
 }
 
 export function apply(ctx) {
+  const status = createUpdateStatus('dsh-tutorloop', VERSION)
+  let navigation
+  const openSettings = () => {
+    if (navigation) navigation.openBundle('dsh-tutorloop')
+    else ctx.layout.selectPanel('plugins')
+  }
   ctx.effect(() => mountStyles(), 'dsh-tutorloop: native styles')
   ctx.effect(() => {
-    const dispose = ctx.slots.inject('conversation.view', () => ctx.slots.register({ name: 'conversation.view', id: 'tutorloop', order: 30, label: () => 'TutorLoop' }, props => <ConversationTutorLoop {...props} />))
-    return () => dispose?.()
-  }, 'dsh-tutorloop: conversation view')
+    const watcher = ctx.inject(['pluginNavigation'], optional => {
+      optional.effect(() => { navigation = optional.pluginNavigation; return () => { navigation = undefined } })
+    })
+    return () => watcher.dispose()
+  }, 'dsh-tutorloop: optional plugin navigation')
+  ctx.effect(() => {
+    const watcher = ctx.inject(['remote', 'remote.pluginManager'], optional => {
+      optional.effect(() => {
+        status.setManager(optional.remote.pluginManager)
+        return () => status.setManager(null)
+      })
+    })
+    return () => watcher.dispose()
+  }, 'dsh-tutorloop: optional host update checks')
+  ctx.effect(() => {
+    const disposers = [
+      ctx.slots.inject('conversation.view', () => ctx.slots.register({ name: 'conversation.view', id: 'tutorloop', order: 30, label: () => 'TutorLoop' }, props => <ConversationTutorLoop {...props} status={status} openSettings={openSettings} />)),
+      ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'tutorloop' }, props => <MainTutorLoop {...props} ctx={ctx} status={status} openSettings={openSettings} />)),
+      ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: 'tutorloop', order: 30, label: () => 'TutorLoop' }, TutorLoopIcon)),
+      ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({ name: 'plugins.bundle.config', key: 'dsh-tutorloop' }, () => <BundleSettings ctx={ctx} status={status} />)),
+    ]
+    return () => { for (const dispose of disposers.reverse()) dispose?.() }
+  }, 'dsh-tutorloop: native views and plugin settings')
 }

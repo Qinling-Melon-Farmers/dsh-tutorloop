@@ -92,7 +92,7 @@ test('renders Chinese first, closed English details, valid Markdown spacing and 
   assert.ok(body.includes('[npm 1.2.3](https://www.npmjs.com/package/dsh-tutorloop/v/1.2.3)'));
   assert.ok(body.includes(`[使用说明 / Guide](https://github.com/${repository}/tree/v1.2.3#readme)`));
   assert.match(body, /\n\n```sh\ndsh plugin --profile web add dsh-tutorloop@1\.2\.3\nnpx --yes --package=dsh-tutorloop@1\.2\.3 dsh-tutorloop setup\n```\n\n/);
-  assert.ok(body.includes('DSH 0.2.1-rc.2, Node 22.19+ or 24+, Python 3.11+.'));
+  assert.ok(body.includes('DSH 0.2.1-rc.2 / 0.2.2-rc.1–rc.3; Node 24.9+ for DSH rc3; Python 3.11+.'));
   assert.ok(body.includes('附件直接下载自 npm，已核对 SHA512；与 npm 安装内容一致。'));
   assert.ok(body.includes('The attached tarball is downloaded from npm and verified against its SHA512 integrity.'));
   assert.ok(body.endsWith('\n'));
